@@ -26,7 +26,7 @@ export async function fetchSources(origin) {
   if (!Array.isArray(body?.sources)) throw new Error('qiaomu api /api/sources returned an unexpected shape');
   return body.sources
     .filter((source) => typeof source?.id === 'string' && typeof source?.name === 'string')
-    .map((source) => ({ id: source.id, name: source.name, enabled: source.enabled !== false }));
+    .map((source) => ({ id: source.id, name: source.name, enabled: source.enabled !== false, ...(typeof source.category === 'string' ? { category: source.category } : {}) }));
 }
 
 export async function fetchStream(origin, limit = 100) {

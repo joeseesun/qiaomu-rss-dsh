@@ -82,7 +82,8 @@ export class RssService extends TypertRemoteService {
       const cache = data.qiaomuChannels[source.id];
       channels.push({
         key: `qiaomu:${source.id}`,
-        kind: 'qiaomu',
+        // Reader submissions are their own community channel; the site can hide it by disabling the source.
+        kind: source.category === 'community' ? 'community' : 'qiaomu',
         name: source.name,
         unread: countUnread(cache?.entries ?? []),
         total: cache?.entries.length ?? 0,

@@ -22,6 +22,7 @@ import { MediaDock } from './MediaDock.jsx';
 import { quoteRange, selectedPassage } from './selection.js';
 import { AskArticle } from './AskArticle.jsx';
 import { articleAudioUrl, articleVideoEmbed } from '../video.js';
+import { PLATFORMS, platformOf } from '../platform.js';
 import { CollectionPanel } from './CollectionPanel.jsx';
 import { collectionCopy, clickedLink } from './collection-copy.js';
 import { printArticle } from './print-article.js';
@@ -265,6 +266,7 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
   const [channels, setChannels] = useState([]);
   const [channel, setChannel] = useState(() => localStorage.getItem('qrs.channel') || 'qiaomu');
   const [filter, setFilter] = useState('all');
+  const [platform, setPlatform] = useState('all');
   const [query, setQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [page, setPage] = useState({ entries: [], hasMore: false, nextCursor: undefined });
@@ -559,7 +561,7 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
   }, [activeArticle, active, versions]);
   useEffect(()=>{if(askContext&&activeArticle?.article)setAskContext(previous=>({...previous,key:activeArticle.article.key,title:activeArticle.article.titleZh||activeArticle.article.title,version:active,selection:previous.key===activeArticle.article.key&&previous.version===active?previous.selection:'',quoteId:previous.key===activeArticle.article.key&&previous.version===active?previous.quoteId:undefined}));},[activeArticle?.article?.key,active]);
   const openCompanion=(quote='')=>{if(!activeArticle)return;setFocused(false);setAskContext({key:activeArticle.article.key,title:activeArticle.article.titleZh||activeArticle.article.title,version:active,selection:quote,quoteId:quote?++selectionSerial.current:undefined});};
-  const selectChannel=(key)=>{if(key===channel)return;articleRequest.current++;setAskContext(null);setFocused(false);setSelected(undefined);setPassage(null);setFilter('all');setQuery('');setChannel(key);};
+  const selectChannel=(key)=>{if(key===channel)return;articleRequest.current++;setAskContext(null);setFocused(false);setSelected(undefined);setPassage(null);setFilter('all');setPlatform('all');setQuery('');setChannel(key);};
   const captureSelection=()=>{const found=selectedPassage(proseRef.current);if(found?.quote===passage?.quote)return;setPassage(found);if(found)openCompanion(found.quote);};
   const theme = reading.readingTheme && reading.readingTheme !== 'auto' ? reading.readingTheme : null;
   const THEME_COLORS = { light: ['#ffffff', '#202124'], paper: ['#f5efdf', '#40382e'], sage: ['#e8eee3', '#29382c'], mist: ['#e7edf2', '#293741'], dark: ['#252525', '#dedede'], black: ['#090909', '#cccccc'] };
@@ -590,6 +592,9 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
             {[['all', '全部'], ['unread', '未读'], ['favorites', '收藏']].map(([value, label]) => (
               <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</button>
             ))}
+            {currentChannel?.kind === 'community' && [['all', '全部'], ...PLATFORMS].map(([value, label]) => (
+              <button key={value} type="button" data-platform={value} aria-pressed={platform === value} onClick={() => setPlatform(value)}>{label}</button>
+            ))}
             <button type="button" className="qrs-settings-button" title="插件设置" aria-label="插件设置" onClick={() => setDialog('settings')}><Icon name="settings" size={17} /></button>
           </div>}
           <div className={`qrs-search-box${searchOpen && channel !== 'collection' ? '' : ' is-hidden'}`}>
@@ -607,7 +612,7 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
             {!pageError && !loading && page.entries.length === 0 && (
               <div className="qrs-empty">{filter === 'favorites' ? '还没有收藏的文章' : filter === 'unread' ? '没有未读文章' : refreshing ? '正在获取这个频道的文章…' : '这个频道暂无文章，稍后会自动尝试更新。'}</div>
             )}
-            {page.entries.map((entry) => (
+            {page.entries.filter((entry) => platform === 'all' || currentChannel?.kind !== 'community' || platformOf(entry.url) === platform).map((entry) => (
               <button key={entry.key} type="button" className={`qrs-entry${selected?.article?.key === entry.key ? ' qrs-selected' : ''}${entry.read ? ' qrs-read' : ''}${entry.summary ? '' : ' qrs-no-summary'}`}
                 aria-pressed={selected?.article?.key === entry.key} onClick={() => void openArticle(entry.key)}>
                 <span className="qrs-entry-copy">
