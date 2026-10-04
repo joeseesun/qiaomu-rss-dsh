@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
-import { articleVideoEmbed } from '../video.js';
+import { articleVideoEmbed, isBilibiliEmbed } from '../video.js';
 
 // A loopback HTML document gives the official player a real browser Referer,
 // including in desktop shells whose outer page uses a custom URL scheme.
@@ -8,7 +8,7 @@ export class VideoPlayerServer {
   constructor() { this.token = randomBytes(24).toString('hex'); }
   async url(article) {
     const embed = articleVideoEmbed(article);
-    if (!embed) return undefined;
+    if (!embed || isBilibiliEmbed(embed)) return undefined;
     if (!this.ready) {
       this.server = createServer((req, res) => {
         const address = this.server.address();

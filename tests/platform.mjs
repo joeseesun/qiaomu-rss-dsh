@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import { platformOf } from '../src/platform.js';
+import { bilibiliEmbedUrl, articleVideoEmbed, isBilibiliEmbed } from '../src/video.js';
+assert.equal(platformOf('https://www.youtube.com/watch?v=abc'), 'youtube');
+assert.equal(platformOf('https://youtu.be/abc'), 'youtube');
+assert.equal(platformOf('https://www.bilibili.com/video/BV1cSec6tEux/'), 'bilibili');
+assert.equal(platformOf('https://mp.weixin.qq.com/s/x'), 'wechat');
+for (const link of ['https://youtube.com.evil.test/watch', 'not a url', undefined]) assert.equal(platformOf(link), 'web');
+const expected = 'https://player.bilibili.com/player.html?isOutside=true&bvid=BV1cSec6tEux&p=2&autoplay=0&high_quality=1&danmaku=0';
+assert.equal(bilibiliEmbedUrl('https://www.bilibili.com/video/BV1cSec6tEux/?spm_id_from=1&vd_source=x&p=2'), expected);
+assert.equal(articleVideoEmbed({ url: 'https://www.bilibili.com/video/BV1cSec6tEux/?p=2' }), expected);
+assert.ok(isBilibiliEmbed(expected));
+for (const url of ['https://bilibili.com.evil.test/video/BV1cSec6tEux', 'http://www.bilibili.com/video/BV1cSec6tEux', 'https://www.bilibili.com/read/cv1', 'https://www.bilibili.com/video/bad', 'https://u:p@www.bilibili.com/video/BV1cSec6tEux']) assert.equal(bilibiliEmbedUrl(url), null);
+console.log('Platform and Bilibili embed passed');

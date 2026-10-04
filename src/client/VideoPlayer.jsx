@@ -1,7 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from './icons.jsx';
+import { isBilibiliEmbed } from '../video.js';
 
+// Bilibili's player loads straight from its own address; YouTube needs the loopback page and a sign-in aware view.
 export function VideoPlayer({ embed, playerUrl }) {
+  return isBilibiliEmbed(embed) ? <BilibiliPlayer embed={embed} /> : <YouTubePlayer embed={embed} playerUrl={playerUrl} />;
+}
+
+function BilibiliPlayer({ embed }) {
+  const params = new URL(embed).searchParams;
+  const part = Number(params.get('p')) || 1;
+  const watchUrl = `https://www.bilibili.com/video/${params.get('bvid')}/${part > 1 ? `?p=${part}` : ''}`;
+  return <div style={{ marginBottom:26 }}>
+    <iframe className="qrs-video-frame" src={embed} title="哔哩哔哩视频播放器" loading="lazy" sandbox="allow-scripts allow-same-origin allow-presentation allow-popups" referrerPolicy="strict-origin-when-cross-origin" allowFullScreen style={{ marginBottom:8 }} />
+    <a className="qmrss-btn" href={watchUrl} target="_blank" rel="noopener noreferrer"><Icon name="external-link" size={16} />在 B 站打开</a>
+  </div>;
+}
+
+function YouTubePlayer({ embed, playerUrl }) {
   const bridge = typeof window !== 'undefined' ? window.dshDesktop?.browser : undefined;
   const [lease, setLease] = useState(null);
   const [error, setError] = useState('');
