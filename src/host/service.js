@@ -303,7 +303,7 @@ export class RssService extends TypertRemoteService {
     await this.ready;
     const { show, episode } = request ?? {};
     const key = `podscribe:${show}/${episode}`;
-    const existing = this.store.getArticle(key);
+    const existing = await this.store.getArticle(key);
     if (existing?.html && existing.truncated !== true) return { key };
     const result = await podscribe.fetchTranscript(show, episode);
     const article = podscribe.transcriptArticle(show, episode, result);
@@ -317,7 +317,7 @@ export class RssService extends TypertRemoteService {
 
   /** Resolve the article body, fetching Qiaomu detail when needed. */
   async ensureArticle(key) {
-    const cached = this.store.getArticle(key);
+    const cached = await this.store.getArticle(key);
     if (key.startsWith('collection:')) {
       if (cached?.html) return cached;
       const job = this.collection.state().jobs.find(item => item.status === 'complete' && `collection:${hashKey(item.origin)}:${item.entryId}` === key);
@@ -337,7 +337,7 @@ export class RssService extends TypertRemoteService {
         if (normalized) {
           normalized.html = sanitizeHtml(normalized.html, { baseUrl: normalized.url });
           this.store.putArticle(normalized);
-          return this.store.getArticle(key);
+          return await this.store.getArticle(key);
         }
       } catch (error) {
         if (cached) return cached;
@@ -350,7 +350,7 @@ export class RssService extends TypertRemoteService {
       const entry = this.store.findFeedEntry(key);
       if (entry?.html) {
         this.store.putArticle({ ...entry, channelKey: entry.channelName });
-        return this.store.getArticle(key);
+        return await this.store.getArticle(key);
       }
       return cached ?? entry;
     }
@@ -359,7 +359,7 @@ export class RssService extends TypertRemoteService {
       const match = /^podscribe:([a-z0-9-]+)\/([a-z0-9-]+)$/.exec(key);
       if (!match) return cached;
       await this.importPodcastTranscript({ show: match[1], episode: match[2] });
-      return this.store.getArticle(key);
+      return await this.store.getArticle(key);
     }
     return cached;
   }
@@ -536,7 +536,7 @@ export class RssService extends TypertRemoteService {
 
   async refreshQiaomu() {
     const [sources, stream] = await Promise.all([
-      qiaomu.fetchSources(this.origin).catch(() => undefined),
+      qiaomu.fetchSources(this.origin, { force: true }).catch(() => undefined),
       qiaomu.fetchStream(this.origin, STREAM_LIMIT),
     ]);
     if (sources) this.store.data.qiaomuSources = { fetchedAt: Date.now(), sources };

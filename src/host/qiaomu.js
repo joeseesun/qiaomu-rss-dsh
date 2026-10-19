@@ -7,6 +7,9 @@
 import { excerptOf } from './feeds.js';
 
 const TIMEOUT_MS = 20_000;
+/** Source catalogs rarely change; repeat refreshes reuse a 60-second copy. */
+const CATALOG_TTL_MS = 60_000;
+const catalogCache = new Map();
 
 async function getJson(origin, path) {
   const url = `${origin.replace(/\/+$/, '')}${path}`;
@@ -21,12 +24,23 @@ async function getJson(origin, path) {
   return response.json();
 }
 
-export async function fetchSources(origin) {
-  const body = await getJson(origin, '/api/sources');
+/**
+ * The Qiaomu source catalog. `force` bypasses the short-lived cache so an
+ * explicit refresh always sees newly added channels; background re-reads
+ * inside the TTL share the previous response and isolated failures remain
+ * retryable.
+ */
+export async function fetchSources(origin, { force = false } = {}) {
+  const root = origin.replace(/\/+$/, '');
+  const cached = catalogCache.get(root);
+  if (!force && cached !== undefined && cached.expires > Date.now()) return cached.sources;
+  const body = await getJson(root, '/api/sources');
   if (!Array.isArray(body?.sources)) throw new Error('qiaomu api /api/sources returned an unexpected shape');
-  return body.sources
+  const sources = body.sources
     .filter((source) => typeof source?.id === 'string' && typeof source?.name === 'string')
     .map((source) => ({ id: source.id, name: source.name, enabled: source.enabled !== false, ...(typeof source.category === 'string' ? { category: source.category } : {}) }));
+  catalogCache.set(root, { expires: Date.now() + CATALOG_TTL_MS, sources });
+  return sources;
 }
 
 export async function fetchStream(origin, limit = 100) {

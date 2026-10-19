@@ -5,10 +5,11 @@
  * thumbnail, and a sticky reader toolbar with the reading-version select.
  * DSH theme tokens replace Obsidian's variables.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { sanitizeHtml } from '../host/sanitize.js';
 import { markdownToHtml } from '../host/markdown.js';
 import { READING_DEFAULTS, fontStack } from '../reading-settings.js';
+import { ListWindow } from './list-window.js';
 import { Icon } from './icons.jsx';
 import { ChannelPicker, ChannelMark } from './ChannelPicker.jsx';
 import { ReadingAppearance } from './ReadingAppearance.jsx';
@@ -327,6 +328,48 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
   const articleRequest = useRef(0);
   const searchInput = useRef();
 
+  // Virtual list window (ported from the Obsidian plugin 0.29.0): only rows
+  // near the viewport mount; measured heights keep scroll anchors stable.
+  const listRef = useRef();
+  const listWindow = useRef(new ListWindow(130));
+  const listRaf = useRef(0);
+  const [listRange, setListRange] = useState({ start: 0, end: 0, before: 0, after: 0 });
+  const syncListWindow = useCallback(() => {
+    const element = listRef.current;
+    if (!element) return;
+    const count = listWindow.current.ids.length;
+    // No layout (hidden panel, test DOM): fall back to rendering every row.
+    if (!element.clientHeight) {
+      setListRange((previous) => (previous.start === 0 && previous.end === count ? previous : { start: 0, end: count, before: 0, after: 0 }));
+      return;
+    }
+    const next = listWindow.current.range(element.scrollTop, element.clientHeight);
+    setListRange((previous) => (
+      previous.start === next.start && previous.end === next.end
+        && Math.abs(previous.before - next.before) < 1 && Math.abs(previous.after - next.after) < 1
+        ? previous : next
+    ));
+  }, []);
+  const scheduleListSync = useCallback(() => {
+    if (listRaf.current) return;
+    const schedule = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (callback) => setTimeout(callback, 16);
+    listRaf.current = schedule(() => {
+      listRaf.current = 0;
+      syncListWindow();
+    });
+  }, [syncListWindow]);
+  const measureRow = useCallback((key, element) => {
+    if (!element) return;
+    if (listWindow.current.measure(key, element.getBoundingClientRect().height)) scheduleListSync();
+  }, [scheduleListSync]);
+  useEffect(() => () => {
+    if (listRaf.current) {
+      if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(listRaf.current);
+      else clearTimeout(listRaf.current);
+    }
+    listRaf.current = 0;
+  }, []);
+
   const notify = (message, isError = false) => {
     setToast({ message, isError });
     clearTimeout(toastTimer.current);
@@ -553,6 +596,35 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
   const audioUrl = articleAudioUrl(activeArticle?.article);
   const videoEmbed = audioUrl ? null : articleVideoEmbed(activeArticle?.article);
   const currentChannel = channels.find((item) => item.key === channel);
+  const channelNames = useMemo(() => new Map(channels.map((item) => [item.key, item.name])), [channels]);
+  const visibleEntries = useMemo(() => (
+    page.entries.filter((entry) => platform === 'all' || currentChannel?.kind !== 'community' || platformOf(entry.url) === platform)
+  ), [page.entries, platform, currentChannel?.kind]);
+  const listKeys = useMemo(() => visibleEntries.map((entry) => entry.key), [visibleEntries]);
+  useEffect(() => {
+    listWindow.current.setItems(listKeys);
+    syncListWindow();
+  }, [listKeys, syncListWindow]);
+  useEffect(() => {
+    const element = listRef.current;
+    if (!element || !globalThis.ResizeObserver) return;
+    const observer = new ResizeObserver(() => syncListWindow());
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [syncListWindow]);
+  useEffect(() => {
+    // Keyboard navigation and restored views can target a row outside the
+    // mounted window; scroll it into view without disturbing an anchored pass.
+    const key = selected?.article?.key;
+    const element = listRef.current;
+    if (!key || !element) return;
+    const index = listWindow.current.position(key);
+    if (index === undefined) return;
+    const range = listWindow.current.range(element.scrollTop, element.clientHeight);
+    if (index >= range.start && index < range.end) return;
+    element.scrollTop = Math.max(0, listWindow.current.offset(index) - element.clientHeight / 3);
+    syncListWindow();
+  }, [selected?.article?.key, syncListWindow]);
   const bodyHtml = useMemo(() => {
     if (!activeArticle) return '';
     if (active === 'original') return activeArticle.html ?? '';
@@ -605,19 +677,21 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
           <div className={`qrs-status${pageError ? ' is-error' : ''}`} role="status" aria-live="polite">
             {pageError ? pageError : ''}
           </div>
-          <div className="qrs-list">
+          <div className="qrs-list" ref={listRef} onScroll={scheduleListSync}>
             {channel === 'collection' ? <CollectionPanel api={api} revision={collectionRevision} onOpen={openCollection} onSettings={openCollectionSettings} notify={notify} /> : <>
             {pageError && <div className="qrs-empty"><button type="button" onClick={() => void loadPage(undefined, true)}>重试</button></div>}
             {!pageError && loading && page.entries.length === 0 && <div className="qrs-empty">正在加载…</div>}
             {!pageError && !loading && page.entries.length === 0 && (
               <div className="qrs-empty">{filter === 'favorites' ? '还没有收藏的文章' : filter === 'unread' ? '没有未读文章' : refreshing ? '正在获取这个频道的文章…' : '这个频道暂无文章，稍后会自动尝试更新。'}</div>
             )}
-            {page.entries.filter((entry) => platform === 'all' || currentChannel?.kind !== 'community' || platformOf(entry.url) === platform).map((entry) => (
+            {listRange.before > 0 && <div aria-hidden="true" style={{ height: `${listRange.before}px` }} />}
+            {visibleEntries.slice(listRange.start, listRange.end).map((entry) => (
               <button key={entry.key} type="button" className={`qrs-entry${selected?.article?.key === entry.key ? ' qrs-selected' : ''}${entry.read ? ' qrs-read' : ''}${entry.summary ? '' : ' qrs-no-summary'}`}
-                aria-pressed={selected?.article?.key === entry.key} onClick={() => void openArticle(entry.key)}>
+                aria-pressed={selected?.article?.key === entry.key} onClick={() => void openArticle(entry.key)}
+                ref={(element) => measureRow(entry.key, element)}>
                 <span className="qrs-entry-copy">
                   <span className="qrs-entry-meta">
-                    <span className="qrs-source-name">{entry.channelName || channels.find((item) => item.key === entry.channelKey)?.name || currentChannel?.name}</span>
+                    <span className="qrs-source-name">{entry.channelName || channelNames.get(entry.channelKey) || currentChannel?.name}</span>
                     <span className="qrs-date">{formatDate(entry.publishedAt)}</span>
                   </span>
                   <span className="qrs-entry-title">
@@ -631,6 +705,7 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
                 {entry.image && <span className="qrs-entry-thumb"><img src={entry.image} alt="" loading="lazy" referrerPolicy="no-referrer" /></span>}
               </button>
             ))}
+            {listRange.after > 0 && <div aria-hidden="true" style={{ height: `${listRange.after}px` }} />}
             {page.hasMore && page.nextCursor && (
               <button type="button" className="qrs-more" disabled={loadingMore} onClick={() => void loadPage(page.nextCursor, false)}>
                 {loadingMore ? '加载中…' : '加载更早文章'}

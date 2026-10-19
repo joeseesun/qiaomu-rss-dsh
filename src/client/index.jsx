@@ -5,6 +5,7 @@
  */
 import { NativeConversation } from './NativeConversation.jsx';
 import { nativeChatBridge } from './native-chat.js';
+import { shareRequests } from './request-cache.js';
 import { ReaderIcon } from './ReaderPage.jsx';
 import { ReaderPanel } from './ReaderBoundary.jsx';
 
@@ -79,6 +80,12 @@ export async function apply(ctx) {
   ctx.inject(['remote.rss'], (child) => registerReader(child));
 }
 
+const SHARED_READS = new Set([
+  'getCollectionSettings', 'listCollectionJobs', 'collectionSnapshot',
+  'listChannels', 'listEntries', 'getArticle', 'searchPodcastShows',
+  'listPodcastEpisodes', 'listSubscriptions', 'getSettings',
+]);
+
 function registerReader(ctx) {
   const call = async (name, ...args) => {
     const namespace = ctx.remote.rss;
@@ -90,30 +97,37 @@ function registerReader(ctx) {
     throw result.error;
   };
 
+  // Identical concurrent reads (re-render storms, double clicks, the
+  // collection poller) share one Remote request; failures stay retryable.
+  // Only Remote reads are wrapped: the native-chat bridge exposes
+  // synchronous accessors (`defaultChatWorkspace`, `watchChatWorkspaces`)
+  // that must keep returning values instead of promises.
   const api = {
     ...nativeChatBridge(ctx),
-    ...Object.fromEntries(['getCollectionSettings', 'configureCollection', 'submitCollection', 'listCollectionJobs', 'collectionSnapshot', 'acknowledgeCollection', 'openCollectionResult'].map(name => [name, params => call(name, params)])),
-    prepareChat: (params) => call('prepareChat', params),
-    setReadingContext: (params) => call('setReadingContext', params),
-    listChannels: () => call('listChannels'),
-    listEntries: (params) => call('listEntries', params),
-    getArticle: (key) => call('getArticle', { key }),
-    searchPodcastShows: (query) => call('searchPodcastShows', { query }),
-    listPodcastEpisodes: (show, page) => call('listPodcastEpisodes', { show, page }),
-    importPodcastTranscript: (show, episode) => call('importPodcastTranscript', { show, episode }),
-    generateVersion: (key, kind) => call('generateVersion', { key, kind }),
-    refresh: (channel) => call('refresh', { channel }),
-    addSubscription: (params) => call('addSubscription', params),
-    removeSubscription: (id) => call('removeSubscription', { id }),
-    listSubscriptions: () => call('listSubscriptions'),
-    updateSubscription: (params) => call('updateSubscription', params),
-    opmlPreview: (params) => call('opmlPreview', params),
-    opmlImport: (xml, urls) => call('opmlImport', { xml, urls }),
-    opmlExport: () => call('opmlExport'),
-    setRead: (keys, read) => call('setRead', { keys, read }),
-    setFavorite: (key, favorite) => call('setFavorite', { key, favorite }),
-    getSettings: () => call('getSettings'),
-    saveSettings: (patch) => call('saveSettings', { patch }),
+    ...shareRequests({
+      ...Object.fromEntries(['getCollectionSettings', 'configureCollection', 'submitCollection', 'listCollectionJobs', 'collectionSnapshot', 'acknowledgeCollection', 'openCollectionResult'].map(name => [name, params => call(name, params)])),
+      prepareChat: (params) => call('prepareChat', params),
+      setReadingContext: (params) => call('setReadingContext', params),
+      listChannels: () => call('listChannels'),
+      listEntries: (params) => call('listEntries', params),
+      getArticle: (key) => call('getArticle', { key }),
+      searchPodcastShows: (query) => call('searchPodcastShows', { query }),
+      listPodcastEpisodes: (show, page) => call('listPodcastEpisodes', { show, page }),
+      importPodcastTranscript: (show, episode) => call('importPodcastTranscript', { show, episode }),
+      generateVersion: (key, kind) => call('generateVersion', { key, kind }),
+      refresh: (channel) => call('refresh', { channel }),
+      addSubscription: (params) => call('addSubscription', params),
+      removeSubscription: (id) => call('removeSubscription', { id }),
+      listSubscriptions: () => call('listSubscriptions'),
+      updateSubscription: (params) => call('updateSubscription', params),
+      opmlPreview: (params) => call('opmlPreview', params),
+      opmlImport: (xml, urls) => call('opmlImport', { xml, urls }),
+      opmlExport: () => call('opmlExport'),
+      setRead: (keys, read) => call('setRead', { keys, read }),
+      setFavorite: (key, favorite) => call('setFavorite', { key, favorite }),
+      getSettings: () => call('getSettings'),
+      saveSettings: (patch) => call('saveSettings', { patch }),
+    }, SHARED_READS),
   };
 
   ctx.slots.inject('main', () => ctx.slots.register({
