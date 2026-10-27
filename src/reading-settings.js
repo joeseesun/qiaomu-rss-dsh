@@ -6,7 +6,7 @@ export const READING_DEFAULTS = {
   fontSize: 19,
   lineHeight: 1.9,
   textWidth: 36,
-  defaultVersion: 'original',
+  defaultVersion: 'rewrite',
   showImages: true,
 };
 
