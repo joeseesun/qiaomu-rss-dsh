@@ -34,6 +34,8 @@ function defaults() {
     articles: {},
     favorites: {},
     read: {},
+    readLater: [],
+    localDeletedEntries: [],
     ai: {},
     recent: [],
     annotations: [],
@@ -178,7 +180,7 @@ export class RssStore {
   }
 
   trimArticles() {
-    const pinned = new Set([...Object.keys(this.data.favorites), ...this.data.recent.slice(-40), ...(this.data.annotations ?? []).filter(n => !n.deletedAt).map(n => n.key)]);
+    const pinned = new Set([...Object.keys(this.data.favorites), ...(this.data.readLater||[]), ...this.data.recent.slice(-40), ...(this.data.annotations ?? []).filter(n => !n.deletedAt).map(n => n.key)]);
     const keys = Object.keys(this.data.articles);
     if (keys.length <= MAX_ARTICLE_BODIES) return;
     const byFetch = keys.sort((a, b) => (this.data.articles[b].fetchedAt ?? 0) - (this.data.articles[a].fetchedAt ?? 0));
@@ -231,7 +233,7 @@ export class RssStore {
   findFeedEntry(key) {
     for (const sub of this.data.subscriptions) {
       const hit = (sub.entries ?? []).find((entry) => entry.key === key);
-      if (hit) return hit;
+      if (hit) return {...hit,channelKey:`feed:${sub.id}`,channelName:sub.name};
     }
     return undefined;
   }

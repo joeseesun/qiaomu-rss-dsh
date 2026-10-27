@@ -1,3 +1,4 @@
+import {createLibraryHost,hiddenArticle,laterEntries,cachedEntries} from './library.js';
 import {rssHomeSnapshot} from './home.js';
 import {createRssSpeechHost} from './speech.js';
 /**
@@ -33,6 +34,7 @@ export class RssService extends TypertRemoteService {
     this.store = new RssStore(ctx.logger);
     this.guard = createGenerationGuard();
     this.speechHost=createRssSpeechHost(this.store);
+    this.libraryHost=createLibraryHost(this.store);
     this.videoPlayer = new VideoPlayerServer();
     this.collection = new CollectionManager(this.store, () => this.origin, {
       schedule: (fn, delay) => typeof ctx.timeout === 'function' ? ctx.timeout(fn, delay) : (() => { const timer = setTimeout(fn, delay); timer.unref?.(); return () => clearTimeout(timer); })(),
@@ -65,7 +67,7 @@ export class RssService extends TypertRemoteService {
     await this.ready;
     const data = this.store.data;
     const channels = [];
-    const countUnread = (entries) => entries.reduce((sum, entry) => (data.read[entry.key] ? sum : sum + 1), 0);
+    const countUnread = (entries) => entries.reduce((sum, entry) => (data.read[entry.key]||hiddenArticle(data,entry) ? sum : sum + 1), 0);
     channels.push({
       key: 'all',
       kind: 'aggregate',
@@ -141,17 +143,17 @@ export class RssService extends TypertRemoteService {
       return channel === 'qiaomu' ? [...stream] : [...stream, ...this.entriesOf('feeds:all')];
     }
     if (channel === 'feeds:all') {
-      return data.subscriptions.flatMap((sub) => (sub.entries ?? []).map((entry) => ({ ...entry, channelName: sub.name })));
+      return data.subscriptions.flatMap((sub) => (sub.entries ?? []).map((entry) => ({ ...entry, channelKey:`feed:${sub.id}`, channelName: sub.name })));
     }
     if (channel.startsWith('group:')) {
       const wanted = channel.slice('group:'.length);
       return data.subscriptions
         .filter((sub) => (sub.group ?? '') === wanted)
-        .flatMap((sub) => (sub.entries ?? []).map((entry) => ({ ...entry, channelName: sub.name })));
+        .flatMap((sub) => (sub.entries ?? []).map((entry) => ({ ...entry, channelKey:`feed:${sub.id}`, channelName: sub.name })));
     }
     if (channel.startsWith('feed:')) {
       const sub = this.store.subscriptionById(channel.slice('feed:'.length));
-      return sub ? (sub.entries ?? []).map((entry) => ({ ...entry, channelName: sub.name })) : [];
+      return sub ? (sub.entries ?? []).map((entry) => ({ ...entry, channelKey:`feed:${sub.id}`, channelName: sub.name })) : [];
     }
     if (channel.startsWith('qiaomu:')) {
       const cache = data.qiaomuChannels[channel.slice('qiaomu:'.length)];
@@ -168,11 +170,11 @@ export class RssService extends TypertRemoteService {
     let nextCursor;
     const data = this.store.data;
     let serverOffset;
-    if (typeof channel === 'string' && channel.startsWith('qiaomu:') && !data.qiaomuChannels[channel.slice(7)]) {
+    if (filter !== 'later' && typeof channel === 'string' && channel.startsWith('qiaomu:') && !data.qiaomuChannels[channel.slice(7)]) {
       const sourceId=channel.slice(7);const fetched=await qiaomu.fetchSourceEntries(this.origin,sourceId);
       data.qiaomuChannels[sourceId]={...fetched,entries:fetched.entries.map(raw=>qiaomu.normalizeQiaomuEntry(raw,channel)),fetchedAt:Date.now()};this.store.touch();
     }
-    if (typeof cursor === 'string' && cursor.startsWith('srv:')) {
+    if (filter !== 'later' && typeof cursor === 'string' && cursor.startsWith('srv:')) {
       const sourceId = channel?.slice('qiaomu:'.length);
       const cache = sourceId ? data.qiaomuChannels[sourceId] : undefined;
       if (cache?.hasMore && cache.nextCursor) {
@@ -189,8 +191,8 @@ export class RssService extends TypertRemoteService {
         }
       }
     }
-    entries = this.entriesOf(channel);
-    entries.sort(sortByDate);
+    entries = filter === 'later' ? laterEntries(data) : this.entriesOf(channel).filter(entry=>!hiddenArticle(data,entry));
+    if(filter !== 'later')entries.sort(sortByDate);
     if (search && search.trim() !== '') {
       const needle = search.trim().toLowerCase();
       entries = entries.filter((entry) => entry.title.toLowerCase().includes(needle) || entry.titleZh?.toLowerCase().includes(needle));
@@ -200,7 +202,7 @@ export class RssService extends TypertRemoteService {
     const offset = serverOffset ?? (typeof cursor === 'string' && cursor.startsWith('off:') ? Number(cursor.slice(4)) || 0 : 0);
     const page = entries.slice(offset, offset + size);
     let hasMore = offset + size < entries.length;
-    if (!hasMore && typeof channel === 'string' && channel.startsWith('qiaomu:')) {
+    if (filter !== 'later' && !hasMore && typeof channel === 'string' && channel.startsWith('qiaomu:')) {
       const cache = data.qiaomuChannels[channel.slice('qiaomu:'.length)];
       if (cache?.hasMore && cache.nextCursor) nextCursor = `srv:${cache.nextCursor}`;
       hasMore = nextCursor !== undefined;
@@ -231,6 +233,7 @@ export class RssService extends TypertRemoteService {
       videoUrl: entry.videoUrl,
       read: data.read[entry.key] !== undefined,
       favorite: data.favorites[entry.key] !== undefined,
+      later: (data.readLater||[]).includes(entry.key),
       hasBody: entry.html !== undefined && entry.html !== '',
     };
   }
@@ -244,7 +247,7 @@ export class RssService extends TypertRemoteService {
     const seen = new Set();
     const out = [];
     for (const entry of this.entriesOf('all').sort(sortByDate)) {
-      if (seen.has(entry.key)) continue;
+      if (seen.has(entry.key)||hiddenArticle(this.store.data,entry)) continue;
       seen.add(entry.key);
       if (entry.title.toLowerCase().includes(needle) || entry.titleZh?.toLowerCase().includes(needle)) {
         out.push(this.entrySummary(entry));
@@ -261,10 +264,14 @@ export class RssService extends TypertRemoteService {
   async getArticle(request) {
     const { key } = request ?? {};
     await this.ready;
+    const known=cachedEntries(this.store.data).get(key);if(known&&hiddenArticle(this.store.data,known))throw Error('Article is hidden locally; restore it first');
     const article = await this.ensureArticle(key);
     if (!article) throw new Error(`qiaomu-rss: unknown article ${key}`);
+    if(hiddenArticle(this.store.data,article))throw Error('Article is hidden locally; restore it first');
     const versions = await this.loadVersions(article);
+    if(hiddenArticle(this.store.data,article))throw Error('Article is hidden locally; restore it first');
     this.store.putArticle(article);
+    if((this.store.data.readLater||[]).includes(key))await this.libraryHost({action:'later',key,value:false});
     return {
       article: this.entrySummary(article),
       videoPlayerUrl: await this.videoPlayer.url(article),
@@ -352,7 +359,7 @@ export class RssService extends TypertRemoteService {
       if (cached?.html) return cached;
       const entry = this.store.findFeedEntry(key);
       if (entry?.html) {
-        this.store.putArticle({ ...entry, channelKey: entry.channelName });
+        this.store.putArticle(entry);
         return await this.store.getArticle(key);
       }
       return cached ?? entry;
@@ -580,7 +587,7 @@ export class RssService extends TypertRemoteService {
       sub.lastFetchedAt = Date.now();
       sub.lastError = undefined;
       sub.status = 'ok';
-      const fresh = parsed.entries.map((entry) => ({ ...entry, channelName: sub.name }));
+      const fresh = parsed.entries.map((entry) => ({ ...entry, channelKey:`feed:${sub.id}`, channelName: sub.name }));
       sub.entries = mergeEntries(sub.entries ?? [], fresh);
       this.store.touch();
       return fresh.length;
@@ -754,6 +761,8 @@ export class RssService extends TypertRemoteService {
     return { ok: true };
   }
 
+  async libraryOperation(request){await this.ready;return this.libraryHost(request);}
+
   async homeSnapshot(){await this.ready;return rssHomeSnapshot(this.store.data);}
 
   async speechOperation(request){await this.ready;return this.speechHost(request);}
@@ -783,7 +792,7 @@ export class RssService extends TypertRemoteService {
     'removeSubscription', 'updateSubscription', 'opmlPreview', 'opmlImport', 'opmlExport',
     'searchPodcastShows', 'listPodcastEpisodes', 'importPodcastTranscript',
     'getCollectionSettings', 'configureCollection', 'submitCollection', 'listCollectionJobs', 'collectionSnapshot', 'acknowledgeCollection', 'openCollectionResult',
-    'speechOperation', 'homeSnapshot', 'setRead', 'setFavorite', 'getSettings', 'saveSettings', 'prepareChat', 'setReadingContext',
+    'speechOperation', 'homeSnapshot', 'libraryOperation', 'setRead', 'setFavorite', 'getSettings', 'saveSettings', 'prepareChat', 'setReadingContext',
   ];
   const prototype = RssService.prototype;
   for (const name of names) {

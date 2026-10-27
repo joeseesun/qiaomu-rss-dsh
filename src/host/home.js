@@ -1,9 +1,10 @@
+import {hiddenArticle} from './library.js';
 /** Home reads cached metadata only. No fetch, body load, mutation or credential access. */
 export function rssHomeSnapshot(data) {
   const entries = new Map();
   const sources = new Map((data.qiaomuSources?.sources || []).map(source => [source.id, source]));
   const add = (entry, sourceName) => {
-    if (!entry?.key || entries.has(entry.key)) return;
+    if (!entry?.key || entries.has(entry.key)||hiddenArticle(data,entry)) return;
     const source = sources.get(entry.channelKey?.replace(/^qiaomu:/, ''));
     if (source?.enabled === false) return;
     entries.set(entry.key, {

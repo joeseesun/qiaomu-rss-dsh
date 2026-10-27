@@ -1,3 +1,4 @@
+import {t} from '../original/i18n';
 import ORIGINAL_CSS from '../original/styles.css';
 import ORIGINAL_BOUNDARY from './original-boundary.css';
 import ORIGINAL_HOST from './harness-ui.css';
@@ -509,6 +510,7 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
     if (request !== articleRequest.current) return;
     if (!data) { setSelected({ error: true, key }); return; }
     setSelected({ ...data, article:{...data.article,read:true}, active: resolveReadingVersion(restoreVersion || reading.defaultVersion, data) });document.querySelector('.qrs-reader')?.scrollTo?.({top:0});
+    if(filter==='later')void loadPage(undefined,true);
     if (data.article?.read === false) {
       void api.setRead([key], true).catch(e=>notify(e.message,true));
       setPage((previous) => ({ ...previous, entries: previous.entries.map((entry) => (entry.key === key ? { ...entry, read: true } : entry)) }));
@@ -532,6 +534,8 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
     }
     await Promise.all([loadChannels(), loadPage(undefined, true)]);
   };
+
+  const toggleLater=async()=>{const key=selected?.article?.key;if(!key)return;const result=await run(api.libraryOperation({action:'later',key}));if(!result)return;setSelected(current=>current?.article?.key===key?{...current,article:{...current.article,later:result.later}}:current);notify(t(result.later?'reader.addedLater':'reader.removedLater'));if(filter==='later')await loadPage(undefined,true);};
 
   const toggleFavorite = async (key, favorite) => {
     const result=await run(api.setFavorite(key, !favorite), { errorPrefix: '收藏失败' });if(!result)return;
@@ -584,17 +588,21 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
 
   useEffect(() => {
     const onKey = (event) => {
+      if(document.querySelector('.qaudio-dsh-overlay,.qaudio-dsh-menu')||event.isComposing)return;
       if (dialog || pickerOpen || askContext || appearanceOpen || menuOpen || event.ctrlKey || event.metaKey || event.altKey) return;
       if (event.target?.closest?.('input,textarea,select,[contenteditable="true"]')) return;
       if (event.key === 'j' || event.key === 'k') { event.preventDefault(); navigate(event.key === 'j' ? 1 : -1); }
-      else if (event.key === '[' || event.key === 'f') { event.preventDefault(); setFocused((current) => !current); }
+      else if (event.key === '[') { event.preventDefault(); setFocused((current) => !current); }
+      else if(event.key==='f'&&selected?.article){event.preventDefault();void toggleFavorite(selected.article.key,selected.article.favorite);}
+      else if(event.key==='m'&&selected?.article){event.preventDefault();void toggleLater();}
+      else if(event.key==='u'&&selected?.article){event.preventDefault();void setRead(selected.article.key,!selected.article.read);}
       else if (event.key === '/') { event.preventDefault(); setSearchOpen(true); setTimeout(() => searchInput.current?.focus(), 0); }
       else if (event.key === 'Escape') { setFocused(false); setSearchOpen(false); setQuery(''); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dialog, pickerOpen, askContext, appearanceOpen, menuOpen, page.entries, selected?.article?.key]);
+  }, [dialog, pickerOpen, askContext, appearanceOpen, menuOpen, page.entries, selected?.article?.key,selected?.article?.favorite,selected?.article?.read,filter]);
 
   const activeArticle = selected && !selected.loading ? selected : undefined;
   const versions = activeArticle?.versions;
@@ -641,7 +649,7 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
   const openCompanion=(quote='')=>{if(!activeArticle)return;setFocused(false);setAskContext({key:activeArticle.article.key,title:activeArticle.article.titleZh||activeArticle.article.title,version:active,selection:quote,quoteId:quote?++selectionSerial.current:undefined});};
   const selectChannel=(key)=>{if(key===channel)return;articleRequest.current++;setAskContext(null);setFocused(false);setSelected(undefined);setPassage(null);setFilter('all');setPlatform('all');setQuery('');setChannel(key);};
   const captureSelection=()=>{const found=selectedPassage(proseRef.current);if(found?.quote===passage?.quote)return;setPassage(found);if(found)openCompanion(found.quote);};
-  const homeOpen=useRef();homeOpen.current=action=>{if(action?.key)void openArticle(action.key);else if(action?.kind==='subscriptions'){setSettingsEntry({tab:'sources',addPrompt:false});setDialog('settings');}};
+  const homeOpen=useRef();homeOpen.current=action=>{if(action?.kind==='refresh'){void loadPage(undefined,true);void loadChannels();if(action.deletedKey){if((selected?.article?.key||selected?.key)===action.deletedKey)articleRequest.current++;setSelected(current=>(current?.article?.key||current?.key)===action.deletedKey?undefined:current);}}else if(action?.key)void openArticle(action.key);else if(action?.kind==='subscriptions'){setSettingsEntry({tab:'sources',addPrompt:false});setDialog('settings');}};
   useEffect(()=>api.homeActions?.attach(action=>homeOpen.current?.(action)),[api]);
   const theme = reading.readingTheme && reading.readingTheme !== 'auto' ? reading.readingTheme : null;
 
@@ -670,7 +678,7 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
           </div>
           {channel !== 'collection' && <div className="qrs-filters" role="group">
             <div className="qrs-filter-row">
-              {[['all', '全部'], ['unread', '未读'], ['favorites', '收藏']].map(([value, label]) => (
+              {[['all', '全部'], ['unread', '未读'], ['favorites', '收藏'], ['later', t('reader.filter.later')]].map(([value, label]) => (
                 <button key={value} type="button" data-filter={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</button>
               ))}
               <button type="button" className="qrs-icon qrs-settings-button" title="插件设置" aria-label="插件设置" onClick={() => setDialog('settings')}><Icon name="settings" size={17} /></button>
@@ -692,7 +700,7 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
             {pageError && <div className="qrs-empty"><button type="button" onClick={() => void loadPage(undefined, true)}>重试</button></div>}
             {!pageError && loading && page.entries.length === 0 && <div className="qrs-empty">正在加载…</div>}
             {!pageError && !loading && page.entries.length === 0 && (
-              <div className="qrs-empty">{filter === 'favorites' ? '还没有收藏的文章' : filter === 'unread' ? '没有未读文章' : refreshing ? '正在获取这个频道的文章…' : '这个频道暂无文章，稍后会自动尝试更新。'}</div>
+              <div className="qrs-empty">{filter === 'later' ? t('reader.emptyLater') : filter === 'favorites' ? '还没有收藏的文章' : filter === 'unread' ? '没有未读文章' : refreshing ? '正在获取这个频道的文章…' : '这个频道暂无文章，稍后会自动尝试更新。'}</div>
             )}
             {listRange.before > 0 && <div aria-hidden="true" style={{ height: `${listRange.before}px` }} />}
             {visibleEntries.slice(listRange.start, listRange.end).map((entry) => (
@@ -784,6 +792,9 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
                     <div className="qrs-menu" role="menu">
                       <button type="button" onClick={() => { setMenuOpen(false); setAppearanceOpen(true); }}><Icon name="type" size={15} />阅读设置</button>
                       <button type="button" onClick={() => { setMenuOpen(false); openCompanion(passage?.quote ?? ''); }}><Icon name="wand-sparkles" size={15} />问 AI</button>
+                      <button type="button" onClick={()=>{setMenuOpen(false);void toggleLater();}}><Icon name="clock-3" size={15}/>{activeArticle.article.later?'移出稍后读':'稍后读'} <kbd>M</kbd></button>
+                      <button type="button" onClick={()=>{setMenuOpen(false);void run(api.library.delete(activeArticle.article.key));}}><Icon name="trash-2" size={15}/>{t('localDelete.action')}</button>
+                      <button type="button" onClick={()=>{setMenuOpen(false);void run(api.library.deleted());}}><Icon name="undo-2" size={15}/>{t('localDelete.manage')}</button>
                       <hr />
                       {activeArticle.article.url && <button type="button" onClick={() => { setMenuOpen(false); window.open(activeArticle.article.url, '_blank', 'noopener,noreferrer'); }}><Icon name="globe" size={15} />打开原文</button>}
                       <button type="button" onClick={() => { setMenuOpen(false); try { printArticle({ title: activeArticle.article.title, url: activeArticle.article.url, version: VERSION_LABELS[active], html: bodyHtml }); } catch (error) { notify(`打印失败：${error?.message ?? String(error)}`, true); } }}><Icon name="file-check" size={15} />打印 / 存为 PDF</button>

@@ -18,6 +18,7 @@ export function enhance<T extends HTMLElement>(element:T):T & Record<string,any>
   createSpan:(options:any={},callback?:any)=>el.createEl('span',options,callback),
   empty:()=>{el.replaceChildren();return el;},setText:(text:any)=>{el.textContent=String(text??'');return el;},appendText:(text:any)=>{el.append(document.createTextNode(String(text)));return el;},
   addClass:(...names:string[])=>{el.classList.add(...names.flatMap(n=>n.split(/\s+/)).filter(Boolean));return el;},
+  addClasses:(names:string[])=>{el.classList.add(...names);return el;},
   removeClass:(...names:string[])=>{el.classList.remove(...names);return el;},
   hasClass:(name:string)=>el.classList.contains(name),toggleClass:(name:string,on:boolean)=>{el.classList.toggle(name,on);return el;},
   setAttr:(name:string,value:any)=>{if(value==null)el.removeAttribute(name);else el.setAttribute(name,String(value));return el;},getAttr:(name:string)=>el.getAttribute(name),
@@ -88,7 +89,7 @@ export const createSpan=(options:any={},callback?:any)=>{const el=createEl("span
 
 export const Platform={isDesktop:true,isDesktopApp:true,isMacOS:false};
 export function setPlatform(value:any){Platform.isMacOS=value.platform==='darwin';}
-export const getLanguage=()=>document.documentElement.lang||navigator.language;
+export const getLanguage=()=>globalThis.document?.documentElement.lang||globalThis.navigator?.language||'zh';
 export function createFragment(fn:any){const f=enhance(document.createElement('span'));fn(f);const fragment=document.createDocumentFragment();fragment.append(...f.childNodes);return fragment;}
 export class Scope {bindings:any[]=[];constructor(_parent:any){}register(mods:any,key:string,fn:any){this.bindings.push({mods,key,fn});}handle=(event:KeyboardEvent)=>{for(const b of this.bindings)if(event.key===b.key&&b.fn(event)===false){event.preventDefault();event.stopPropagation();}};}
 export class FuzzySuggestModal extends Modal {placeholder='';setPlaceholder(s:string){this.placeholder=s;}getItems():any[]{return [];}getItemText(item:any){return String(item);}onChooseItem(_item:any){}onOpen(){const input=this.contentEl.createEl('input',{type:'search',placeholder:this.placeholder});const list=this.contentEl.createDiv();const draw=()=>{list.empty();for(const item of this.getItems().filter(i=>this.getItemText(i).toLowerCase().includes(input.value.toLowerCase())).slice(0,200)){const b=list.createEl('button',{text:this.getItemText(item)});b.onclick=()=>{this.onChooseItem(item);this.close();};}};input.oninput=draw;draw();}}

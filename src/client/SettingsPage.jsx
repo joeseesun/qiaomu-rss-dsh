@@ -92,6 +92,7 @@ export function SettingsPage({ api, onClose, notify, initialTab = 'reading', sta
                 <button type="button" onClick={() => void exportOpml()}><Download size={15} />导出</button>
               </div></div>
               {showImport && <div className="qrs-settings-import"><OpmlImport api={api} onDone={async () => { await reloadSubscriptions(); setShowImport(false); }} /></div>}
+              <div className="qrs-settings-source-actions"><button type="button" onClick={()=>void api.library.deleted().catch(error=>notify(error.message,true))}>管理已删除文章</button></div>
               <SubscriptionManager api={api} subscriptions={subscriptions} onChange={setSubscriptions} notify={(text, isError) => { setMessage(text); if (isError) notify(text, true); }} />
             </div>
           </section>}

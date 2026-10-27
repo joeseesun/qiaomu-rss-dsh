@@ -1,7 +1,7 @@
 /** Reading appearance: shared defaults, options, and validation for both halves. */
 export const READING_DEFAULTS = {
   readingTheme: 'auto',
-  readingFont: 'serif',
+  readingFont: 'fangsong',
   customFont: '',
   fontSize: 19,
   lineHeight: 1.9,
