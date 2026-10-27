@@ -1,3 +1,6 @@
+import {createNotesHost} from './notes.js';
+import {resolveDshHome} from '@deepseek-ai/dsh-home-paths';
+import {join} from 'node:path';
 import {createLibraryHost,hiddenArticle,laterEntries,cachedEntries} from './library.js';
 import {rssHomeSnapshot} from './home.js';
 import {createRssSpeechHost} from './speech.js';
@@ -35,6 +38,7 @@ export class RssService extends TypertRemoteService {
     this.guard = createGenerationGuard();
     this.speechHost=createRssSpeechHost(this.store);
     this.libraryHost=createLibraryHost(this.store);
+    this.notesHost=createNotesHost(this.store,config.notesDir||join(resolveDshHome(),"qiaomu","qiaomu-rss-dsh","notes"));
     this.videoPlayer = new VideoPlayerServer();
     this.collection = new CollectionManager(this.store, () => this.origin, {
       schedule: (fn, delay) => typeof ctx.timeout === 'function' ? ctx.timeout(fn, delay) : (() => { const timer = setTimeout(fn, delay); timer.unref?.(); return () => clearTimeout(timer); })(),
@@ -761,6 +765,8 @@ export class RssService extends TypertRemoteService {
     return { ok: true };
   }
 
+  async notesOperation(request){await this.ready;return this.notesHost(request);}
+
   async libraryOperation(request){await this.ready;return this.libraryHost(request);}
 
   async homeSnapshot(){await this.ready;return rssHomeSnapshot(this.store.data);}
@@ -792,7 +798,7 @@ export class RssService extends TypertRemoteService {
     'removeSubscription', 'updateSubscription', 'opmlPreview', 'opmlImport', 'opmlExport',
     'searchPodcastShows', 'listPodcastEpisodes', 'importPodcastTranscript',
     'getCollectionSettings', 'configureCollection', 'submitCollection', 'listCollectionJobs', 'collectionSnapshot', 'acknowledgeCollection', 'openCollectionResult',
-    'speechOperation', 'homeSnapshot', 'libraryOperation', 'setRead', 'setFavorite', 'getSettings', 'saveSettings', 'prepareChat', 'setReadingContext',
+    'notesOperation', 'speechOperation', 'homeSnapshot', 'libraryOperation', 'setRead', 'setFavorite', 'getSettings', 'saveSettings', 'prepareChat', 'setReadingContext',
   ];
   const prototype = RssService.prototype;
   for (const name of names) {

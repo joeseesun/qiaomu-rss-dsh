@@ -1,4 +1,4 @@
-import {AppWindow, Bookmark, Braces, ChevronDown, ChevronUp, Circle, CircleAlert, CircleCheck, Clock3, CodeXml, Ellipsis, Feather, FileCheck, FilePen, FilePlus, Folder, Gamepad, Gamepad2, Globe, Hammer, ListTree, Mail, MessageCircle, Moon, Newspaper, NotebookPen, PanelLeft, PanelLeftClose, PanelLeftOpen, Plus, Podcast, RefreshCw, Rss, Search, Settings, Sparkles, Trash2, TreeDeciduous, Tv, Type, Undo2, WandSparkles, X} from 'lucide-react';
+import {AppWindow, Bookmark, Braces, ChevronDown, ChevronUp, Circle, CircleAlert, CircleCheck, Clock3, CodeXml, Ellipsis, Feather, FileCheck, FileDown, FilePenLine, FilePen, FilePlus, Folder, Gamepad, Gamepad2, Globe, Hammer, ListTree, Mail, MessageCircle, Moon, Newspaper, NotebookPen, PanelLeft, PanelLeftClose, PanelLeftOpen, Plus, Podcast, RefreshCw, Rss, Search, Settings, Sparkles, Trash2, TreeDeciduous, Tv, Type, Undo2, WandSparkles, X} from 'lucide-react';
 
 // Use the original Lucide icon names directly, without hand-drawn substitutes.
 const ICONS = {
@@ -16,6 +16,8 @@ const ICONS = {
   'file-plus': FilePlus,
   'file-check': FileCheck,
   'file-pen': FilePen,
+  'file-down': FileDown,
+  'file-pen-line': FilePenLine,
   'notebook-pen': NotebookPen,
   'ellipsis': Ellipsis,
   'settings': Settings,

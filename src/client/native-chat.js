@@ -1,6 +1,7 @@
 /** Retain Harness sessions for an embedded conversation without changing navigation. */
 export function nativeChatBridge(ctx) {
-  let scope;
+  let scope, sidebar;
+  ctx.inject(['sidebarRight'],child=>{sidebar=child.sidebarRight;return()=>{sidebar=undefined;};});
   const watchers = new Set();
   ctx.inject(['sessions', 'uiSession', 'uiWorkspace'], child => {
     scope = child;
@@ -8,6 +9,13 @@ export function nativeChatBridge(ctx) {
     return () => { scope = undefined; for (const notify of watchers) notify(); };
   });
   return {
+    async openNote(filename){
+      const service=sidebar,sessionId=service?.mounted.getSnapshot();
+      if(!sessionId||typeof service.openResource!=='function')throw Error('请先打开一个 Harness 对话，再打开笔记');
+      if(typeof filename!=='string'||!(/^(?:[A-Za-z]:[\\/]|\/)/.test(filename)))throw Error('无效笔记路径');
+      const address='dsh-resource://file/session/'+encodeURIComponent(sessionId)+'/'+filename.replace(/\\/g,'/').split('/').map(encodeURIComponent).join('/');
+      await service.openResource(address,{preferNewPane:true});
+    },
     defaultChatWorkspace() {
       const items = scope?.uiWorkspace.workspaces.list.getSnapshot().items ?? [];
       const preferred = items.find(w => w.title === 'default-workspace' || /(?:^|\/)default-workspace$/.test(w.path || ''));

@@ -56,7 +56,7 @@ const fakeCtx = {
     get rss() { throw new Error('cannot get property "remote.rss" without inject'); },
   },
   inject(dependencies, callback) {
-    if (dependencies.includes('sessions') || dependencies.includes('qiaomuAudio') || dependencies.includes('qiaomuHome')) return;
+    if (dependencies.includes('sidebarRight') || dependencies.includes('sessions') || dependencies.includes('qiaomuAudio') || dependencies.includes('qiaomuHome')) return;
     if (!dependencies.includes('remote.rss')) throw new Error('missing rss namespace dependency');
     return callback({ ...this, remote: { rss: new Proxy({}, {
       get(_target, name) {
@@ -92,6 +92,7 @@ const api = new Proxy({}, {
   get(_target, name) {
     return (...args) => {
       apiCalls.push(name); apiArgs.push({ name, args });
+      if (name === 'notesOperation') return Promise.resolve({folders:['/'],entries:[],settings:{selectionPopup:true,articleFolder:'Articles'}});
       if (name === 'getCollectionSettings') return Promise.resolve({ enabled:collectionEnabled, verified:collectionVerified });
       if (name === 'configureCollection') { if (args[0].invite === 'invalid-test') return Promise.reject(new Error('邀请码无效')); collectionEnabled=args[0].enabled; if (args[0].invite) collectionVerified=true; return Promise.resolve({enabled:collectionEnabled,verified:collectionVerified}); }
       if (name === 'collectionSnapshot') return Promise.resolve({enabled:collectionEnabled,verified:collectionVerified,jobs:collectionJobs,pending:0});
@@ -178,7 +179,7 @@ if (!container.querySelector('.qrs-article-head .qrs-mode-chip')) throw new Erro
 const mode = container.querySelector('.qrs-mode-select');
 if (!mode || mode.options.length !== 3) throw new Error('reading-version select missing');
 for (const selector of ['.qrs-reader-toolbar', '.qrs-reader-nav', '.qrs-actions']) if (!container.querySelector(selector)) throw new Error(`missing ${selector}`);
-if (container.querySelectorAll('.qrs-actions .qrs-icon').length !== 6) throw new Error('reader action icons missing');
+if (container.querySelectorAll('.qrs-actions .qrs-icon').length !== 7) throw new Error('reader action icons missing');
 if (!apiCalls.includes('setRead')) throw new Error('opening an unread article did not mark it read');
 if (container.querySelector('.qrs-audio-dock audio')?.getAttribute('src') !== 'https://example.org/episode.mp3') throw new Error('podcast player did not open with article');
 console.log('READER OK — head chip, h1, prose, version select, nav, original outline/speech and reader actions');
@@ -242,7 +243,7 @@ container.querySelector('.qrs-reader-toolbar button[aria-label="显示列表"]')
 await tick();
 console.log('PAGINATION + FOCUS OK');
 
-// Selecting article text opens the companion directly; the old floating bar is gone.
+// The original selection toolbar offers explicit capture, speech and AI actions.
 const prose = container.querySelector('.qrs-prose');
 const firstText = prose?.querySelector('p')?.firstChild;
 if (!firstText?.textContent) throw new Error('article selection fixture missing');
@@ -251,7 +252,12 @@ range.setStart(firstText, 0);
 range.setEnd(firstText, Math.min(8, firstText.textContent.length));
 window.getSelection().removeAllRanges();
 window.getSelection().addRange(range);
+range.getBoundingClientRect=()=>({left:20,bottom:60,width:100});
 prose.dispatchEvent(new dom.window.MouseEvent('mouseup', { bubbles: true }));
+prose.dispatchEvent(new dom.window.MouseEvent('pointerup', { bubbles: true }));
+await tick();
+const selectionPopup=document.querySelector('.qrs-selection-popup');if(!selectionPopup||selectionPopup.querySelectorAll('button').length!==4)throw Error('original selection toolbar missing');
+selectionPopup.querySelector('button:last-child').click();
 await tick();
 if (!container.querySelector('.qrs-companion')) throw new Error('selection did not open companion');
 if (!container.querySelector('.qrs-workarea.has-companion .qrs-sidebar')) throw new Error('article list unmounted when companion opened');
@@ -263,13 +269,13 @@ if (!container.querySelector('.qrs-channel-picker')) throw new Error('reader top
 container.querySelector('.qrs-channel-close').click();
 container.querySelector('.qrs-companion-header button[aria-label="关闭伴读"]').click();
 await tick();
-console.log('COMPANION OK — text selection, Lucide wand, channel entry, no floating toolbar');
+console.log('COMPANION OK — original selection toolbar, explicit AI action, Lucide wand and channel entry');
 
-// The Harness edition has no note or daily-journal actions.
-for (const label of ['存为 Markdown','阅读笔记','摘录选中文字到工作区日记','导出文章到工作区日记']) {
-  if (container.querySelector(`[aria-label="${label}"]`) || button(label)) throw new Error(`legacy note action still visible: ${label}`);
-}
-console.log('NOTELESS HARNESS UI OK');
+// Note actions retain the original location modal and Markdown workflow.
+container.querySelector('.qrs-actions button[aria-label="更多操作"]').click();await tick();
+if(!button('追加到笔记…')||!button('笔记与摘录设置'))throw Error('note actions missing');
+container.querySelector('.qrs-actions button[aria-label="更多操作"]').click();await tick();
+console.log('ORIGINAL NOTE ACTIONS OK');
 
 // ---- settings dialog (subscriptions + OPML) -------------------------------
 container.querySelector('.qrs-settings-button').click();

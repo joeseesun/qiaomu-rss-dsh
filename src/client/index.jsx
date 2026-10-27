@@ -1,3 +1,4 @@
+import {createNotesClient} from './notes.js';
 import {createLibraryClient} from './library.js';
 import {createRssHomeProvider,createHomeActions} from './home.js';
 import {createRssSpeechClient} from './speech.js';
@@ -61,6 +62,7 @@ const TYPERT_REMOTE = {
     method('speechOperation'),
     method('homeSnapshot',false),
     method('libraryOperation'),
+    method('notesOperation'),
     method('getSettings', false),
     method('saveSettings'),
     ...['prepareChat','setReadingContext'].map(name => method(name)),
@@ -114,6 +116,7 @@ function registerReader(ctx) {
     ...nativeChatBridge(ctx),
     homeActions,
     homeSnapshot:()=>call('homeSnapshot'),
+    notesOperation:request=>call('notesOperation',request),
     libraryOperation:request=>call('libraryOperation',request),
     ...shareRequests({
       ...Object.fromEntries(['getCollectionSettings', 'configureCollection', 'submitCollection', 'listCollectionJobs', 'collectionSnapshot', 'acknowledgeCollection', 'openCollectionResult'].map(name => [name, params => call(name, params)])),
@@ -144,6 +147,8 @@ function registerReader(ctx) {
 
   ctx.inject(['qiaomuHome'],ready=>ready.effect(()=>ready.qiaomuHome.register(PLUGIN_ID,createRssHomeProvider({load:api.homeSnapshot,open:action=>{ctx.layout.selectPanel(PANEL_ID);homeActions.send(action);},subscribe:homeActions.subscribe}),{label:'乔木 RSS'})));
   ctx.effect(()=>()=>homeActions.dispose());
+  api.notes=createNotesClient(api);
+  ctx.effect(()=>()=>api.notes.dispose());
   api.library=createLibraryClient(api);
   ctx.effect(()=>()=>api.library.dispose());
   api.speech=createRssSpeechClient(api);

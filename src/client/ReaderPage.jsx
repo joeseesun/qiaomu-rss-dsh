@@ -1,3 +1,4 @@
+import {noteMaterial} from './notes.js';
 import {t} from '../original/i18n';
 import ORIGINAL_CSS from '../original/styles.css';
 import ORIGINAL_BOUNDARY from './original-boundary.css';
@@ -648,7 +649,10 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
   useEffect(()=>{if(askContext&&activeArticle?.article)setAskContext(previous=>({...previous,key:activeArticle.article.key,title:activeArticle.article.titleZh||activeArticle.article.title,version:active,selection:previous.key===activeArticle.article.key&&previous.version===active?previous.selection:'',quoteId:previous.key===activeArticle.article.key&&previous.version===active?previous.quoteId:undefined}));},[activeArticle?.article?.key,active]);
   const openCompanion=(quote='')=>{if(!activeArticle)return;setFocused(false);setAskContext({key:activeArticle.article.key,title:activeArticle.article.titleZh||activeArticle.article.title,version:active,selection:quote,quoteId:quote?++selectionSerial.current:undefined});};
   const selectChannel=(key)=>{if(key===channel)return;articleRequest.current++;setAskContext(null);setFocused(false);setSelected(undefined);setPassage(null);setFilter('all');setPlatform('all');setQuery('');setChannel(key);};
-  const captureSelection=()=>{const found=selectedPassage(proseRef.current);if(found?.quote===passage?.quote)return;setPassage(found);if(found)openCompanion(found.quote);};
+  const captureSelection=()=>{const found=selectedPassage(proseRef.current);if(found?.quote===passage?.quote)return;setPassage(found);};
+  const notesContext=useRef();notesContext.current=activeArticle?{material:()=>noteMaterial(activeArticle.article,active,proseRef.current,reading.showImages!==false),ask:quote=>{const found=selectedPassage(proseRef.current);setPassage(found);openCompanion(quote);},speak:range=>api.speech.startSelection(range)}:null;
+  useEffect(()=>api.notes?.mount(rootRef.current,()=>notesContext.current),[api]);
+  useEffect(()=>{api.notes?.clear();},[api,activeArticle?.article?.key,active]);
   const homeOpen=useRef();homeOpen.current=action=>{if(action?.kind==='refresh'){void loadPage(undefined,true);void loadChannels();if(action.deletedKey){if((selected?.article?.key||selected?.key)===action.deletedKey)articleRequest.current++;setSelected(current=>(current?.article?.key||current?.key)===action.deletedKey?undefined:current);}}else if(action?.key)void openArticle(action.key);else if(action?.kind==='subscriptions'){setSettingsEntry({tab:'sources',addPrompt:false});setDialog('settings');}};
   useEffect(()=>api.homeActions?.attach(action=>homeOpen.current?.(action)),[api]);
   const theme = reading.readingTheme && reading.readingTheme !== 'auto' ? reading.readingTheme : null;
@@ -785,6 +789,7 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
                     aria-pressed={Boolean(activeArticle.article.read)} onClick={() => void setRead(activeArticle.article.key, !activeArticle.article.read)}>
                     <Icon name={activeArticle.article.read ? 'circle-check' : 'circle'} />
                   </button>
+                  <button type="button" className="qrs-icon" data-qrs-tip="daily-note" title={t('reader.noteToDaily')} aria-label={t('reader.noteToDaily')} onClick={()=>{void run(Promise.resolve().then(()=>api.notes.capture(notesContext.current.material())));}}><Icon name="notebook-pen"/></button>
                   <button type="button" className="qrs-icon" data-qrs-tip="companion" title="AI 伴读" aria-label="AI 伴读" onClick={()=>openCompanion(passage?.quote??'')}><Icon name="wand-sparkles"/></button>
                   <button type="button" className="qrs-icon" data-qrs-article-more="" title="更多操作" aria-label="更多操作" aria-expanded={menuOpen}
                     onClick={() => setMenuOpen((open) => !open)}><Icon name="ellipsis" /></button>
@@ -793,6 +798,9 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
                       <button type="button" onClick={() => { setMenuOpen(false); setAppearanceOpen(true); }}><Icon name="type" size={15} />阅读设置</button>
                       <button type="button" onClick={() => { setMenuOpen(false); openCompanion(passage?.quote ?? ''); }}><Icon name="wand-sparkles" size={15} />问 AI</button>
                       <button type="button" onClick={()=>{setMenuOpen(false);void toggleLater();}}><Icon name="clock-3" size={15}/>{activeArticle.article.later?'移出稍后读':'稍后读'} <kbd>M</kbd></button>
+                      <button type="button" onClick={()=>{setMenuOpen(false);void run(Promise.resolve().then(()=>api.notes.save(notesContext.current.material())));}}><Icon name="file-down" size={15}/>{t('reader.saveNoteTo')}</button>
+                      <button type="button" onClick={()=>{setMenuOpen(false);void run(Promise.resolve().then(()=>api.notes.choose(notesContext.current.material())));}}><Icon name="file-pen-line" size={15}/>追加到笔记…</button>
+                      <button type="button" onClick={()=>{setMenuOpen(false);void run(api.notes.settings());}}><Icon name="settings" size={15}/>笔记与摘录设置</button>
                       <button type="button" onClick={()=>{setMenuOpen(false);void run(api.library.delete(activeArticle.article.key));}}><Icon name="trash-2" size={15}/>{t('localDelete.action')}</button>
                       <button type="button" onClick={()=>{setMenuOpen(false);void run(api.library.deleted());}}><Icon name="undo-2" size={15}/>{t('localDelete.manage')}</button>
                       <hr />

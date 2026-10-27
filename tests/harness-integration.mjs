@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { nativeChatBridge } from '../src/client/native-chat.js';
-let draft,opened,released=false,scope,cleanup,submits=0;
+let draft,opened,released=false,scope,cleanup,submits=0,sidebarScope;
 const listeners=new Set();
 const inputState={getSnapshot:()=>({draft:draft ?? '',phase:'plain',attachmentIds:[]}),subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);}};
-const bridge=nativeChatBridge({inject(names,cb){assert.ok(names.includes('uiSession'));scope=cb;}});
+const bridge=nativeChatBridge({inject(names,cb){if(names.includes('sidebarRight')){sidebarScope=cb;return;}assert.ok(names.includes('uiSession'));scope=cb;}});
 assert.deepEqual(bridge.chatWorkspaces(),[]);assert.equal(bridge.defaultChatWorkspace(),undefined);await assert.rejects(bridge.openChat({workspaceId:'w',prompt:'p'}));
 cleanup=scope({
  sessions:{async create(request){assert.deepEqual(request,{workspaceId:'w'});return 's';},retain(id){return {sessionId:id,release(){released=true;}};}},
@@ -17,3 +17,6 @@ draft='用户未发送的草稿';await assert.rejects(chat.sendPrompt('追问证
 assert.equal(opened,undefined);assert.equal(released,false);chat.release();assert.equal(released,true);
 cleanup();assert.deepEqual(bridge.chatWorkspaces(),[]);assert.equal(bridge.defaultChatWorkspace(),undefined);
 console.log('Harness integration: default workspace, native quick send, draft protection and cleanup passed');
+
+await assert.rejects(bridge.openNote("/notes/test.md"),/Harness/);
+let resource;const offSidebar=sidebarScope({sidebarRight:{mounted:{getSnapshot:()=>"session/id"},openResource:async(...args)=>{resource=args;}}});await bridge.openNote("/notes/hello world.md");assert.deepEqual(resource,["dsh-resource://file/session/session%2Fid//notes/hello%20world.md",{preferNewPane:true}]);offSidebar();await assert.rejects(bridge.openNote("/notes/test.md"));
