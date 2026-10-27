@@ -88,10 +88,12 @@ const collectionJobs = [];
 let generatedOnce = false;
 let delayNextArticle = false;
 let unblockArticle;
+const viewStates=new Map();
 const api = new Proxy({}, {
   get(_target, name) {
     return (...args) => {
       apiCalls.push(name); apiArgs.push({ name, args });
+      if (name === 'viewOperation'){const request=args[0],key=JSON.stringify([request.origin,request.channel]);if(request.action==='save'){viewStates.set(key,structuredClone(request.value));return Promise.resolve(request.value);}return Promise.resolve(viewStates.get(key)||null);}
       if (name === 'sourcesOperation') return Promise.resolve({state:{subscriptions:[],subscriptionGroups:[],sourceMeta:{},collapsedGroups:[],personalArticles:{},sources:[],readIds:[],settings:{baseUrl:'https://rss.qiaomu.ai',remoteImages:false,followedPodcasts:[],podcastNames:{},markdownFolders:[]}},revision:'fixture'});
       if (name === 'notesOperation') return Promise.resolve({folders:['/'],entries:[],settings:{selectionPopup:true,articleFolder:'Articles'}});
       if (name === 'getCollectionSettings') return Promise.resolve({ enabled:collectionEnabled, verified:collectionVerified });
@@ -337,4 +339,14 @@ if(discover.querySelectorAll('.qrs-discovery-card').length<5)throw Error('origin
 discover.querySelector('[data-tab="library"]').click();await tick();if(!discover.querySelector('.qrs-library'))throw Error('original library tab missing');
 discover.querySelector('.modal-close-button').click();await tick();
 console.log('DISCOVERY OK — original center tabs, collections, cards and lifecycle');
+// Returning to a channel restores its own filters, version and offsets.
+const chooseChannel=async label=>{container.querySelector('.qrs-channel').click();await tick();const picker=container.querySelector('.qrs-channel-picker');const input=picker.querySelector('input[type=search]');Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value').set.call(input,label);input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));await tick();const option=picker.querySelector('.qrs-channel-option');if(!option)throw Error('channel not found: '+label);option.click();for(let n=0;n<4;n++)await tick();};
+await chooseChannel('测试源');container.querySelector('.qrs-entry').click();await tick();await tick();container.querySelector('[data-filter="favorites"]').click();await tick();
+const version=container.querySelector('#qrs-mode');version.value='original';version.dispatchEvent(new dom.window.Event('change',{bubbles:true}));await tick();
+container.querySelector('.qrs-list').scrollTop=123;container.querySelector('.qrs-reader').scrollTop=654;
+await chooseChannel('乔木精选');await chooseChannel('测试源');for(let n=0;n<4;n++)await tick();
+if(container.querySelector('[data-filter="favorites"]').getAttribute('aria-pressed')!=='true')throw Error('channel filter not restored');
+if(container.querySelector('#qrs-mode')?.value!=='original')throw Error('channel reading version not restored');
+if(container.querySelector('.qrs-reader').scrollTop!==654||container.querySelector('.qrs-list').scrollTop!==123)throw Error('channel offsets not restored');
+console.log('CHANNEL MEMORY OK — independent Host state, reading version and scroll positions');
 process.exit(0);

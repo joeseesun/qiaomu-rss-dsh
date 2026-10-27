@@ -301,6 +301,12 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [focused, setFocused] = useState(false);
   const [reading, setReading] = useState(FALLBACK_READING);
+  const [readingReady,setReadingReady]=useState(false);
+  const [viewRevision,setViewRevision]=useState(0);
+  const viewBooted=useRef(false),viewTouched=useRef(false);
+  const viewRecord=useRef(),viewEpoch=useRef(0),pendingView=useRef(),restoredOffsets=useRef(),offsetObserver=useRef(),viewReady=useRef('');
+  const viewOrigin=reading.origin||'https://rss.qiaomu.ai';
+  const cancelViewRestore=()=>{viewEpoch.current++;pendingView.current=null;restoredOffsets.current=null;offsetObserver.current?.disconnect();};
   const [listWidth, setListWidth] = useState(() => Number(localStorage.getItem('qrs.listWidth')) || 300);
   const [askContext, setAskContext] = useState(null);
   const activeChannelRef = useRef(channel);
@@ -427,7 +433,7 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
   useEffect(() => {
     void api.getSettings()
       .then((result) => setReading({ ...FALLBACK_READING, ...result.settings }))
-      .catch(() => {});
+      .catch(() => {}).finally(()=>setReadingReady(true));
     const reload = () => { void api.getSettings().then((result) => setReading({ ...FALLBACK_READING, ...result.settings })).catch(() => {}); };
     window.addEventListener('qrs-settings-changed', reload);
     return () => window.removeEventListener('qrs-settings-changed', reload);
@@ -444,9 +450,13 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
     if (replace) setLoading(true); else setLoadingMore(true);
     setPageError('');
     try {
-      const data = await api.listEntries({ channel, filter, search: query || undefined, cursor });
+      const wanted=replace&&pendingView.current?.channel===channel?pendingView.current.listCount:0;
+      const first = await api.listEntries({ channel, filter, search: query || undefined, cursor,limit:wanted>30?100:undefined });
+      if(!first||!Array.isArray(first.entries))throw Error('Invalid article list');const data={...first,entries:[...first.entries]};
+      while(replace&&wanted>data.entries.length&&data.hasMore&&data.nextCursor&&request===pageRequest.current){const next=await api.listEntries({channel,filter,search:query||undefined,cursor:data.nextCursor,limit:100});const fresh=next.entries.filter(entry=>!data.entries.some(item=>item.key===entry.key));data.entries.push(...fresh);data.hasMore=next.hasMore;data.nextCursor=next.nextCursor;if(!fresh.length)break;}
       if (request !== pageRequest.current) return;
       if (!data || !Array.isArray(data.entries)) throw new Error('阅读服务返回了无效的文章列表');
+      if(pendingView.current?.channel===channel)pendingView.current.listLoaded=true;
       setPage((previous) => (replace ? data : {
         entries: [...previous.entries, ...data.entries.filter((entry) => !previous.entries.some((seen) => seen.key === entry.key))],
         hasMore: data.hasMore,
@@ -504,23 +514,44 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
     // Show cached articles immediately, then refresh a scoped channel in the background.
   }, [channel, channels]);
 
-  const openArticle = async (key, restoreVersion) => {
+  const openArticle = async (key, restoreVersion,restoring=false) => {
+    if(!restoring){viewTouched.current=true;cancelViewRestore();}
     const request = ++articleRequest.current;
     setSelected({ loading: true, key });setPassage(null);if(document.querySelector('.qrs-root')?.clientWidth>0&&document.querySelector('.qrs-root').clientWidth<460)setFocused(true);
     const data = await run(api.getArticle(key), { errorPrefix: '读取正文失败' });
     if (request !== articleRequest.current) return;
     if (!data) { setSelected({ error: true, key }); return; }
-    setSelected({ ...data, article:{...data.article,read:true}, active: resolveReadingVersion(restoreVersion || reading.defaultVersion, data) });document.querySelector('.qrs-reader')?.scrollTo?.({top:0});
-    if(filter==='later')void loadPage(undefined,true);
+    setSelected({ ...data, article:{...data.article,read:true}, active: resolveReadingVersion(restoreVersion || reading.defaultVersion, data) });if(!restoring)scrollerRef.current?.scrollTo?.({top:0});
+    if(!restoring&&filter==='later')void loadPage(undefined,true);
     if (data.article?.read === false) {
       void api.setRead([key], true).catch(e=>notify(e.message,true));
       setPage((previous) => ({ ...previous, entries: previous.entries.map((entry) => (entry.key === key ? { ...entry, read: true } : entry)) }));
     }
   };
 
+  viewRecord.current={origin:viewOrigin,channel,filter,query,mode:selected?.active||reading.defaultVersion,key:selected?.article?.key||(!selected?.error?selected?.key:null)||null,listCount:Math.min(500,page.entries.length),platform,searchOpen};
+  const checkpointView=()=>{const record=viewRecord.current;if(!api.viewMemory||!record||record.channel==='collection'||pendingView.current||viewReady.current!==JSON.stringify([record.origin,record.channel]))return Promise.resolve();const offsets=restoredOffsets.current;const {origin,channel,...value}=record;return api.viewMemory.save(origin,channel,{...value,listTop:offsets?.listTop??listRef.current?.scrollTop??0,readerTop:offsets?.readerTop??scrollerRef.current?.scrollTop??0});};
+  const checkpointRef=useRef();checkpointRef.current=checkpointView;
+  const restoreChannel=async(key,initial=false)=>{
+    const ticket=++viewEpoch.current;if(!initial)await checkpointView().catch(error=>notify(error.message,true));
+    let saved=null;try{saved=await api.viewMemory?.load(viewOrigin,key);}catch(error){if(ticket===viewEpoch.current)notify(error.message,true);}
+    if(ticket!==viewEpoch.current)return;
+    if(!saved&&initial){try{const old=JSON.parse(localStorage.getItem('qrs.view.'+key)||'null');if(old?.key)saved={key:old.key,mode:old.active};}catch{}}
+    articleRequest.current++;pageRequest.current++;offsetObserver.current?.disconnect();restoredOffsets.current=null;setAskContext(null);setFocused(false);setSelected(undefined);setPassage(null);
+    const next={channel:key,key:null,mode:reading.defaultVersion,filter:'all',query:'',platform:'all',searchOpen:false,listCount:0,listTop:0,readerTop:0,...saved,listLoaded:false};pendingView.current=next;viewReady.current=JSON.stringify([viewOrigin,key]);
+    setFilter(next.filter);setQuery(next.query);setPlatform(next.platform);setSearchOpen(next.searchOpen||!!next.query);setChannel(key);setViewRevision(value=>value+1);
+    if(key===channel&&next.filter===filter&&next.query===query)void loadPage(undefined,true);
+    if(next.key)void openArticle(next.key,next.mode,true);
+  };
+  useEffect(()=>{if(!readingReady)return;if(!viewBooted.current&&viewTouched.current){viewBooted.current=true;viewReady.current=JSON.stringify([viewOrigin,channel]);return;}viewBooted.current=true;void restoreChannel(channel,true);return()=>{viewEpoch.current++;};},[readingReady,viewOrigin]);
   useEffect(()=>{
-    try {const saved=JSON.parse(localStorage.getItem('qrs.view.'+channel)||'null');if(saved?.key)void openArticle(saved.key,saved.active);}catch{}
-  },[]);
+    const pending=pendingView.current;if(!pending||pending.channel!==channel||!pending.listLoaded||loading||selected?.loading)return;if(pending.key&&selected?.article?.key!==pending.key&&!selected?.error)return;
+    pendingView.current=null;if(selected?.error)return;restoredOffsets.current={listTop:pending.listTop,readerTop:pending.readerTop};
+    const apply=()=>{const offsets=restoredOffsets.current;if(offsets){if(listRef.current)listRef.current.scrollTop=offsets.listTop;if(scrollerRef.current)scrollerRef.current.scrollTop=offsets.readerTop;scheduleListSync();}};apply();offsetObserver.current?.disconnect();
+    if(globalThis.ResizeObserver){offsetObserver.current=new ResizeObserver(apply);for(const element of [listRef.current,scrollerRef.current,proseRef.current])if(element)offsetObserver.current.observe(element);}
+  },[channel,selected?.article?.key,selected?.loading,selected?.error,loading,page.entries.length,viewRevision]);
+  useEffect(()=>{const timer=setTimeout(()=>{void checkpointView().catch(error=>notify(error.message,true));},350);return()=>clearTimeout(timer);},[channel,filter,query,selected?.article?.key,selected?.active,page.entries.length,platform,searchOpen]);
+  useEffect(()=>{let timer;const root=rootRef.current;const save=()=>{clearTimeout(timer);timer=setTimeout(()=>{void checkpointRef.current?.().catch(()=>{});},350);};const intent=()=>{restoredOffsets.current=null;offsetObserver.current?.disconnect();};root?.addEventListener('scroll',save,true);root?.addEventListener('wheel',intent,{passive:true});root?.addEventListener('touchstart',intent,{passive:true});root?.addEventListener('pointerdown',intent);root?.addEventListener('keydown',intent);const hidden=()=>{if(document.hidden)void checkpointRef.current?.().catch(()=>{});};document.addEventListener('visibilitychange',hidden);return()=>{clearTimeout(timer);void checkpointRef.current?.().catch(()=>{});offsetObserver.current?.disconnect();root?.removeEventListener('scroll',save,true);root?.removeEventListener('wheel',intent);root?.removeEventListener('touchstart',intent);root?.removeEventListener('pointerdown',intent);root?.removeEventListener('keydown',intent);document.removeEventListener('visibilitychange',hidden);};},[]);
 
   const refresh = async (target) => {
     setRefreshing(true);
@@ -648,7 +679,7 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
   }, [activeArticle, active, versions]);
   useEffect(()=>{if(askContext&&activeArticle?.article)setAskContext(previous=>({...previous,key:activeArticle.article.key,title:activeArticle.article.titleZh||activeArticle.article.title,version:active,selection:previous.key===activeArticle.article.key&&previous.version===active?previous.selection:'',quoteId:previous.key===activeArticle.article.key&&previous.version===active?previous.quoteId:undefined}));},[activeArticle?.article?.key,active]);
   const openCompanion=(quote='')=>{if(!activeArticle)return;setFocused(false);setAskContext({key:activeArticle.article.key,title:activeArticle.article.titleZh||activeArticle.article.title,version:active,selection:quote,quoteId:quote?++selectionSerial.current:undefined});};
-  const selectChannel=(key)=>{if(key===channel)return;articleRequest.current++;setAskContext(null);setFocused(false);setSelected(undefined);setPassage(null);setFilter('all');setPlatform('all');setQuery('');setChannel(key);};
+  const selectChannel=(key)=>{viewTouched.current=true;if(key===channel){cancelViewRestore();return;}void restoreChannel(key);};
   const captureSelection=()=>{const found=selectedPassage(proseRef.current);if(found?.quote===passage?.quote)return;setPassage(found);};
   const notesContext=useRef();notesContext.current=activeArticle?{material:()=>noteMaterial(activeArticle.article,active,proseRef.current,reading.showImages!==false),ask:quote=>{const found=selectedPassage(proseRef.current);setPassage(found);openCompanion(quote);},speak:range=>api.speech.startSelection(range)}:null;
   useEffect(()=>api.notes?.mount(rootRef.current,()=>notesContext.current),[api]);
@@ -684,7 +715,7 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
           {channel !== 'collection' && <div className="qrs-filters" role="group">
             <div className="qrs-filter-row">
               {[['all', '全部'], ['unread', '未读'], ['favorites', '收藏'], ['later', t('reader.filter.later')]].map(([value, label]) => (
-                <button key={value} type="button" data-filter={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</button>
+                <button key={value} type="button" data-filter={value} aria-pressed={filter === value} onClick={() => {viewTouched.current=true;cancelViewRestore();setFilter(value);}}>{label}</button>
               ))}
               <button type="button" className="qrs-icon qrs-settings-button" title="插件设置" aria-label="插件设置" onClick={() => setDialog('settings')}><Icon name="settings" size={17} /></button>
             </div>
@@ -694,7 +725,7 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
           </div>}
           <div className={`qrs-search-box${searchOpen && channel !== 'collection' ? '' : ' is-hidden'}`}>
             <input ref={searchInput} type="search" aria-label="搜索文章" placeholder="搜索已加载的文章…" value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => {viewTouched.current=true;cancelViewRestore();setQuery(event.target.value);}}
               onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); setSearchOpen(false); setQuery(''); } }} />
           </div>
           <div className={`qrs-status${pageError ? ' is-error' : ''}`} role="status" aria-live="polite">

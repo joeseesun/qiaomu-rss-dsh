@@ -1,0 +1,14 @@
+import test,{after} from 'node:test';
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+import {mkdtemp,writeFile,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {pathToFileURL} from 'node:url';
+import {createViewMemory} from '../src/client/view-memory.js';
+const temp=await mkdtemp(join(tmpdir(),'qrs-view-state-'));after(()=>rm(temp,{recursive:true,force:true}));
+const result=await build({entryPoints:['src/host/view-state.js'],bundle:true,platform:'node',format:'esm',write:false});await writeFile(join(temp,'host.mjs'),result.outputFiles[0].text);const {createViewStateHost}=await import(pathToFileURL(join(temp,'host.mjs')));
+const value={key:'feed:entry',mode:'translation',filter:'favorites',query:'查询',listTop:320,readerTop:1800,listCount:90,platform:'all',searchOpen:true};
+test('channel state persists original fields without bodies, isolates origins, and rolls back failed writes',async()=>{const store={data:{settings:{}},flush:async()=>{}};const host=createViewStateHost(store);await host({action:'save',channel:'qiaomu',origin:'https://one.test',value:{...value,html:'secret-body',entries:[{content:'body'}]}});assert.deepEqual(await host({action:'load',channel:'qiaomu',origin:'https://one.test'}),value);assert.equal(await host({action:'load',channel:'qiaomu',origin:'https://two.test'}),null);assert.doesNotMatch(JSON.stringify(store.data.channelViews),/secret-body|content|html/);const before=structuredClone(store.data.channelViews);store.flush=async()=>{throw Error('disk full');};await assert.rejects(host({action:'save',channel:'qiaomu',origin:'https://one.test',value:{...value,readerTop:1}}),/disk full/);assert.deepEqual(store.data.channelViews,before);await assert.rejects(host({action:'save',channel:'qiaomu',value:{...value,readerTop:Infinity}}));});
+test('client serializes checkpoints and a late load never overwrites a newer saved position',async()=>{let release;const calls=[];const memory=createViewMemory({viewOperation:request=>{if(request.action==='load')return new Promise(resolve=>release=resolve);calls.push(request.value);return Promise.resolve();}});const pending=memory.load('https://one.test','a');await memory.save('https://one.test','a',value);release({...value,readerTop:0});assert.deepEqual(await pending,value);assert.deepEqual(await memory.load('https://one.test','a'),value);await memory.save('https://one.test','a',{...value,readerTop:30});assert.deepEqual(calls.map(v=>v.readerTop),[1800,30]);await memory.dispose();});
+test('failed checkpoints stay retryable and duplicate snapshots do not write again',async()=>{let calls=0;const memory=createViewMemory({viewOperation:async()=>{if(++calls===1)throw Error('offline');}});await assert.rejects(memory.save('https://one.test','a',value),/offline/);await memory.save('https://one.test','a',value);await memory.save('https://one.test','a',value);assert.equal(calls,2);await memory.dispose();});
