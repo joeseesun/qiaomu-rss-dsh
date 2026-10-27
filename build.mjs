@@ -54,7 +54,8 @@ const footer = `
 
 await esbuild.build({
   entryPoints: [join(here, 'src/client/index.jsx')],
-  loader: { '.css': 'text' },
+  loader: { '.css': 'text', '.woff2':'dataurl' },
+  alias:{'@qiaomu/speech/speech':'./src/shared-audio/shared.js','@qiaomu/speech/speech/text':'./src/shared-audio/core/tts/text.js','@qiaomu/speech/speech/progress':'./src/shared-audio/shared/progress.js'},
   bundle: true,
   platform: 'browser',
   format: 'cjs',

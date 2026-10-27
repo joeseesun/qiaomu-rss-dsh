@@ -1,7 +1,7 @@
 /** Reading appearance: shared defaults, options, and validation for both halves. */
 export const READING_DEFAULTS = {
   readingTheme: 'auto',
-  readingFont: 'serif',
+  readingFont: 'fangsong',
   customFont: '',
   fontSize: 19,
   lineHeight: 1.9,
@@ -12,17 +12,18 @@ export const READING_DEFAULTS = {
 
 /** Theme id -> [background, foreground]; `auto` follows the host theme. */
 export const THEMES = {
-  auto: null, light: ['#ffffff', '#202124'], paper: ['#f5efdf', '#40382e'], sage: ['#e8eee3', '#29382c'],
-  mist: ['#e7edf2', '#293741'], dark: ['#252525', '#dedede'], black: ['#090909', '#cccccc'],
+  auto: null, light: ['#ffffff', '#292929'], paper: ['#f8f5ee', '#2e2a24'], sage: ['#edf2ec', '#27322c'],
+  mist: ['#f3f5f8', '#1f2933'], dark: ['#171c24', '#d5dce6'], black: ['#000000', '#c8c8c8'],
 };
 
 export const FONTS = {
+  fangsong: {label:'朱雀仿宋',family:'"QRS Fangsong",serif'},
   serif: { label: '宋体', family: '"Songti SC","Noto Serif CJK SC",Georgia,serif' },
   sans: { label: '黑体', family: 'system-ui,"PingFang SC","Noto Sans CJK SC",sans-serif' },
   sourceHanSerif: { label: '思源宋体', family: '"Source Han Serif SC","Noto Serif CJK SC","Songti SC",serif' },
   sourceHanSans: { label: '思源黑体', family: '"Source Han Sans SC","Noto Sans CJK SC","PingFang SC",sans-serif' },
   wenkai: { label: '霞鹜文楷', family: '"LXGW WenKai","Kaiti SC",serif' },
-  zhenkai: { label: '朱雀仿宋', family: '"Zhuque Fangsong","Fangsong","STFangsong",serif' },
+  zhenkai: { label: '霞鹜臻楷', family: '"LXGW ZhenKai GB",serif' },
   custom: { label: '自选设备字体', family: 'serif' },
 };
 

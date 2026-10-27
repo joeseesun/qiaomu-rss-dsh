@@ -17,7 +17,7 @@ export function groupChannels(channels) {
       sections.读者社区.push({ ...channel, subtitle: `${channel.total} 篇文章` });
     } else if (channel.kind === 'podcast' || channel.kind === 'collection') {
       sections.聚合.push({ ...channel, subtitle: channel.kind === 'collection' ? `${channel.total} 个申请` : `${channel.total} 期已获取的原文` });
-    } else if (channel.key.startsWith('group:')) {
+    } else if ((channel.key.startsWith('group:')||channel.key.startsWith('source-group:'))) {
       sections.订阅分组.push({ ...channel, subtitle: `${channels.filter((item) => item.group === channel.name).length} 个订阅源` });
     } else {
       sections.我的订阅源.push({ ...channel, subtitle: channel.lastError ? `获取失败：${channel.lastError}` : channel.url, error: Boolean(channel.lastError) });
@@ -28,7 +28,7 @@ export function groupChannels(channels) {
 
 export function ChannelMark({ channel, size = 22 }) {
   const key = channel.key ?? '';
-  const IconType = channel.kind === 'community' ? Users : key === 'all' ? Layers3 : key === 'qiaomu' ? Sparkles : key === 'podscribe' ? Podcast : key === 'feeds:all' || key.startsWith('feed:') ? Rss : key.startsWith('group:') ? Folder : BookOpen;
+  const IconType = channel.kind === 'community' ? Users : key === 'all' ? Layers3 : key === 'qiaomu' ? Sparkles : key === 'podscribe' ? Podcast : key === 'feeds:all' || key.startsWith('feed:') ? Rss : (key.startsWith('group:')||key.startsWith('source-group:')) ? Folder : BookOpen;
   const variant = key === 'qiaomu' ? ' curated' : key === 'all' ? ' all' : '';
   return <span className={`qrs-channel-mark${variant}`} style={{ width:size, height:size, flex:`0 0 ${size}px` }} aria-hidden="true">
     {channel.monogram && key.startsWith('qiaomu:') ? <span>{channel.monogram}</span> : <IconType size={Math.max(16, Math.round(size*.72))} strokeWidth={1.8} />}

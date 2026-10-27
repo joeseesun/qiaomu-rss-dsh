@@ -1,12 +1,10 @@
 import { CollectionSettings } from './CollectionPanel.jsx';
 import { collectionCopy } from './collection-copy.js';
 import { useEffect, useState } from 'react';
-import { BookOpen, Rss, Info, Download, Upload, ArrowUpRight, Heart, Sparkles } from 'lucide-react';
+import { BookOpen, Rss, Info, ArrowUpRight, Heart, Sparkles } from 'lucide-react';
 import packageInfo from '../../package.json';
 import { Icon } from './icons.jsx';
 import { ReadingControls } from './ReadingAppearance.jsx';
-import { OpmlImport } from './OpmlImport.jsx';
-import { SubscriptionManager } from './SubscriptionManager.jsx';
 import { PromptManager } from './PromptManager.jsx';
 
 const TABS = [['reading', '阅读体验', BookOpen], ['sources', '订阅管理', Rss], ['prompts', '快捷提示词', Sparkles], ['about', '关于', Info]];
@@ -19,7 +17,6 @@ export function SettingsPage({ api, onClose, notify, initialTab = 'reading', sta
   const [subscriptions, setSubscriptions] = useState([]);
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
-  const [showImport, setShowImport] = useState(false);
   useEffect(() => {
     let cancelled = false;
     void Promise.all([api.getSettings(), api.listSubscriptions()]).then(([preferences, feeds]) => {
@@ -30,10 +27,6 @@ export function SettingsPage({ api, onClose, notify, initialTab = 'reading', sta
     return () => { cancelled = true; window.removeEventListener('keydown', onKey); };
   }, [api, onClose]);
   const change = patch => setSettings(previous => ({ ...previous, ...patch }));
-  const reloadSubscriptions = async () => {
-    const list = await api.listSubscriptions();
-    setSubscriptions(list.subscriptions);
-  };
   const save = async () => {
     setSaving(true);
     try {
@@ -43,17 +36,6 @@ export function SettingsPage({ api, onClose, notify, initialTab = 'reading', sta
       setMessage('设置已保存');
     } catch (error) { setMessage(`保存失败：${error?.message ?? String(error)}`); }
     finally { setSaving(false); }
-  };
-  const exportOpml = async () => {
-    try {
-      const result = await api.opmlExport();
-      const url = URL.createObjectURL(new Blob([result.xml], { type: 'text/xml' }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'qiaomu-rss-subscriptions.opml';
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (error) { setMessage(`导出失败：${error?.message ?? String(error)}`); }
   };
   return <div className="qrs-settings-backdrop" onClick={onClose}>
     <section className="qrs-settings-page" role="dialog" aria-modal="true" aria-label="乔木 RSS 设置" onClick={event => event.stopPropagation()}>
@@ -87,12 +69,8 @@ export function SettingsPage({ api, onClose, notify, initialTab = 'reading', sta
               <label className="qrs-settings-url"><span>服务地址</span><input type="url" aria-label="乔木服务地址" value={settings.origin ?? ''} onChange={event => change({ origin: event.target.value })} /></label>
             </div>
             <div className="qrs-settings-card qrs-settings-sources-card">
-              <div className="qrs-settings-card-head qrs-settings-source-head"><div><h3>我的订阅</h3><p>{subscriptions.length} 个订阅源</p></div><div className="qrs-settings-source-actions">
-                <button type="button" onClick={() => setShowImport(current => !current)} aria-expanded={showImport}><Upload size={15} />导入 OPML</button>
-                <button type="button" onClick={() => void exportOpml()}><Download size={15} />导出</button>
-              </div></div>
-              {showImport && <div className="qrs-settings-import"><OpmlImport api={api} onDone={async () => { await reloadSubscriptions(); setShowImport(false); }} /></div>}
-              <SubscriptionManager api={api} subscriptions={subscriptions} onChange={setSubscriptions} notify={(text, isError) => { setMessage(text); if (isError) notify(text, true); }} />
+              <div className="qrs-settings-card-head"><h3>我的订阅</h3><p>{subscriptions.length} 个订阅源</p></div>
+              <div className="qrs-settings-source-actions"><button type="button" onClick={()=>void api.sources.open('library').catch(error=>notify(error.message,true))}>打开订阅中心</button><button type="button" onClick={()=>void api.library.deleted().catch(error=>notify(error.message,true))}>管理已删除文章</button><button type="button" onClick={()=>void api.notes.settings().catch(error=>notify(error.message,true))}>笔记与摘录设置</button></div>
             </div>
           </section>}
           {tab === 'lab' && <CollectionSettings api={api} notify={setMessage} onOpenRequests={onCollection} />}

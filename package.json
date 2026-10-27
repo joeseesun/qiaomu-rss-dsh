@@ -5,7 +5,8 @@
   "private": true,
   "license": "GPL-3.0-only",
   "engines": {
-    "dsh": ">=0.2.0-rc.2 <0.3.0"
+    "dsh": ">=0.2.1-rc.3 <0.3.0",
+    "node": ">=22.13.0"
   },
   "repository": {
     "type": "git",
@@ -21,7 +22,7 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "test": "node tests/collection.mjs && node tests/collection-client.mjs && node tests/smoke.mjs && node tests/article-context.mjs && node tests/reading-scope.mjs && node tests/video.mjs && node tests/platform.mjs && node tests/video-player.mjs && node tests/video-player-client.mjs && node tests/reading-version.mjs && node tests/podscribe.mjs && node tests/render.mjs && node tests/harness-integration.mjs && node tests/companion-draft.mjs && node tests/request-cache.mjs && node tests/list-window.mjs && node tests/body-store.mjs && node tests/catalog-cache.mjs",
+    "test": "node tests/collection.mjs && node tests/collection-client.mjs && node tests/smoke.mjs && node tests/article-context.mjs && node tests/reading-scope.mjs && node tests/video.mjs && node tests/platform.mjs && node tests/video-player.mjs && node tests/video-player-client.mjs && node tests/reading-version.mjs && node tests/podscribe.mjs && node tests/render.mjs && node tests/harness-integration.mjs && node tests/companion-draft.mjs && node tests/request-cache.mjs && node tests/list-window.mjs && node tests/body-store.mjs && node tests/catalog-cache.mjs && node --test tests/original-speech.mjs tests/notes.mjs tests/sources.mjs tests/view-state.mjs",
     "prepack": "npm run build && node scripts/verify-package.mjs",
     "check": "npm run build && npm test && node scripts/verify-package.mjs"
   },
@@ -41,7 +42,9 @@
     "src/data/independent-blogs.json",
     "src/data/podcast-feeds.json",
     "cordis.patch.yml",
-    "lib"
+    "lib",
+    "THIRD_PARTY_NOTICES.md",
+    "licenses"
   ],
   "dsh": {
     "bundle": {
@@ -93,6 +96,7 @@
   "devDependencies": {
     "esbuild": "^0.28.1",
     "jsdom": "^26.1.0",
+    "lucide": "1.47.0",
     "lucide-react": "^1.49.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
@@ -100,5 +104,14 @@
   "homepage": "https://github.com/joeseesun/qiaomu-rss-dsh#readme",
   "bugs": {
     "url": "https://github.com/joeseesun/qiaomu-rss-dsh/issues"
+  },
+  "dependencies": {
+    "dompurify": "3.4.17",
+    "marked": "18.0.11",
+    "moment": "2.31.0",
+    "turndown": "7.2.4",
+    "turndown-plugin-gfm": "1.0.2",
+    "yaml": "2.9.1",
+    "zod": "4.6.6"
   }
 }

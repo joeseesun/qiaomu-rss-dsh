@@ -1,3 +1,9 @@
+import {createViewMemory} from './view-memory.js';
+import {createSourcesClient} from './sources.js';
+import {createNotesClient} from './notes.js';
+import {createLibraryClient} from './library.js';
+import {createRssHomeProvider,createHomeActions} from './home.js';
+import {createRssSpeechClient} from './speech.js';
 /**
  * qiaomu-rss client half: mounts the `rss` Remote namespace and registers the
  * reading panel (sidebar icon + `main` page). Built into a single
@@ -55,6 +61,12 @@ const TYPERT_REMOTE = {
     method('opmlExport', false),
     method('setRead'),
     method('setFavorite'),
+    method('speechOperation'),
+    method('homeSnapshot',false),
+    method('libraryOperation'),
+    method('notesOperation'),
+    method('sourcesOperation'),
+    method('viewOperation'),
     method('getSettings', false),
     method('saveSettings'),
     ...['prepareChat','setReadingContext'].map(name => method(name)),
@@ -87,13 +99,15 @@ const SHARED_READS = new Set([
 ]);
 
 function registerReader(ctx) {
+  const homeActions=createHomeActions();
+  const mutations=new Set(['libraryOperation','getArticle','setRead','setFavorite','refresh','addSubscription','removeSubscription','updateSubscription','opmlImport','importPodcastTranscript','openCollectionResult']);
   const call = async (name, ...args) => {
     const namespace = ctx.remote.rss;
     if (!namespace || typeof namespace[name] !== 'function') {
       throw new Error('qiaomu-rss 阅读服务未就绪,请稍后重试');
     }
     const result = await namespace[name](...args);
-    if (result.ok) return result.value;
+    if (result.ok) {if(mutations.has(name))homeActions.changed();return result.value;}
     throw result.error;
   };
 
@@ -104,6 +118,12 @@ function registerReader(ctx) {
   // that must keep returning values instead of promises.
   const api = {
     ...nativeChatBridge(ctx),
+    homeActions,
+    homeSnapshot:()=>call('homeSnapshot'),
+    viewOperation:request=>call('viewOperation',request),
+    sourcesOperation:request=>call('sourcesOperation',request),
+    notesOperation:request=>call('notesOperation',request),
+    libraryOperation:request=>call('libraryOperation',request),
     ...shareRequests({
       ...Object.fromEntries(['getCollectionSettings', 'configureCollection', 'submitCollection', 'listCollectionJobs', 'collectionSnapshot', 'acknowledgeCollection', 'openCollectionResult'].map(name => [name, params => call(name, params)])),
       prepareChat: (params) => call('prepareChat', params),
@@ -115,7 +135,7 @@ function registerReader(ctx) {
       listPodcastEpisodes: (show, page) => call('listPodcastEpisodes', { show, page }),
       importPodcastTranscript: (show, episode) => call('importPodcastTranscript', { show, episode }),
       generateVersion: (key, kind) => call('generateVersion', { key, kind }),
-      refresh: (channel) => call('refresh', { channel }),
+      refresh: (channel,force=false) => call('refresh', { channel,force }),
       addSubscription: (params) => call('addSubscription', params),
       removeSubscription: (id) => call('removeSubscription', { id }),
       listSubscriptions: () => call('listSubscriptions'),
@@ -125,10 +145,25 @@ function registerReader(ctx) {
       opmlExport: () => call('opmlExport'),
       setRead: (keys, read) => call('setRead', { keys, read }),
       setFavorite: (key, favorite) => call('setFavorite', { key, favorite }),
+      speechOperation:request=>call('speechOperation',request),
       getSettings: () => call('getSettings'),
       saveSettings: (patch) => call('saveSettings', { patch }),
     }, SHARED_READS),
   };
+
+  ctx.inject(['qiaomuHome'],ready=>ready.effect(()=>ready.qiaomuHome.register(PLUGIN_ID,createRssHomeProvider({load:api.homeSnapshot,open:action=>{ctx.layout.selectPanel(PANEL_ID);homeActions.send(action);},subscribe:homeActions.subscribe}),{label:'乔木 RSS'})));
+  ctx.effect(()=>()=>homeActions.dispose());
+  api.viewMemory=createViewMemory(api);
+  ctx.effect(()=>()=>{void api.viewMemory.dispose();});
+  api.sources=createSourcesClient(api);
+  ctx.effect(()=>()=>api.sources.dispose());
+  api.notes=createNotesClient(api);
+  ctx.effect(()=>()=>api.notes.dispose());
+  api.library=createLibraryClient(api);
+  ctx.effect(()=>()=>api.library.dispose());
+  api.speech=createRssSpeechClient(api);
+  ctx.inject(['qiaomuAudio'],ready=>api.speech.connect(ready.qiaomuAudio));
+  ctx.effect(()=>()=>api.speech.dispose());
 
   ctx.slots.inject('main', () => ctx.slots.register({
     name: 'main',

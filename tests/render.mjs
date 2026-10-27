@@ -25,6 +25,8 @@ define('getComputedStyle', dom.window.getComputedStyle);
 define('requestAnimationFrame', (cb) => setTimeout(cb, 0));
 define('cancelAnimationFrame', (id) => clearTimeout(id));
 
+dom.window.HTMLMediaElement.prototype.pause=function(){};
+dom.window.HTMLMediaElement.prototype.load=function(){};
 const req = dependencyRequire;
 const React = req('react');
 const ReactDOMClient = req('react-dom/client');
@@ -54,7 +56,7 @@ const fakeCtx = {
     get rss() { throw new Error('cannot get property "remote.rss" without inject'); },
   },
   inject(dependencies, callback) {
-    if (dependencies.includes('sessions')) return;
+    if (dependencies.includes('sidebarRight') || dependencies.includes('sessions') || dependencies.includes('qiaomuAudio') || dependencies.includes('qiaomuHome')) return;
     if (!dependencies.includes('remote.rss')) throw new Error('missing rss namespace dependency');
     return callback({ ...this, remote: { rss: new Proxy({}, {
       get(_target, name) {
@@ -86,10 +88,14 @@ const collectionJobs = [];
 let generatedOnce = false;
 let delayNextArticle = false;
 let unblockArticle;
+const viewStates=new Map();
 const api = new Proxy({}, {
   get(_target, name) {
     return (...args) => {
       apiCalls.push(name); apiArgs.push({ name, args });
+      if (name === 'viewOperation'){const request=args[0],key=JSON.stringify([request.origin,request.channel]);if(request.action==='save'){viewStates.set(key,structuredClone(request.value));return Promise.resolve(request.value);}return Promise.resolve(viewStates.get(key)||null);}
+      if (name === 'sourcesOperation') return Promise.resolve({state:{subscriptions:[],subscriptionGroups:[],sourceMeta:{},collapsedGroups:[],personalArticles:{},sources:[],readIds:[],settings:{baseUrl:'https://rss.qiaomu.ai',remoteImages:false,followedPodcasts:[],podcastNames:{},markdownFolders:[]}},revision:'fixture'});
+      if (name === 'notesOperation') return Promise.resolve({folders:['/'],entries:[],settings:{selectionPopup:true,articleFolder:'Articles'}});
       if (name === 'getCollectionSettings') return Promise.resolve({ enabled:collectionEnabled, verified:collectionVerified });
       if (name === 'configureCollection') { if (args[0].invite === 'invalid-test') return Promise.reject(new Error('邀请码无效')); collectionEnabled=args[0].enabled; if (args[0].invite) collectionVerified=true; return Promise.resolve({enabled:collectionEnabled,verified:collectionVerified}); }
       if (name === 'collectionSnapshot') return Promise.resolve({enabled:collectionEnabled,verified:collectionVerified,jobs:collectionJobs,pending:0});
@@ -176,10 +182,10 @@ if (!container.querySelector('.qrs-article-head .qrs-mode-chip')) throw new Erro
 const mode = container.querySelector('.qrs-mode-select');
 if (!mode || mode.options.length !== 3) throw new Error('reading-version select missing');
 for (const selector of ['.qrs-reader-toolbar', '.qrs-reader-nav', '.qrs-actions']) if (!container.querySelector(selector)) throw new Error(`missing ${selector}`);
-if (container.querySelectorAll('.qrs-actions .qrs-icon').length !== 4) throw new Error('reader action icons missing');
+if (container.querySelectorAll('.qrs-actions .qrs-icon').length !== 7) throw new Error('reader action icons missing');
 if (!apiCalls.includes('setRead')) throw new Error('opening an unread article did not mark it read');
-if (container.querySelector('.qrs-article .qrs-article-audio audio')?.getAttribute('src') !== 'https://example.org/episode.mp3') throw new Error('podcast player did not open with article');
-console.log('READER OK — head chip, h1, prose, version select, nav, four reader actions');
+if (container.querySelector('.qrs-audio-dock audio')?.getAttribute('src') !== 'https://example.org/episode.mp3') throw new Error('podcast player did not open with article');
+console.log('READER OK — head chip, h1, prose, version select, nav, original outline/speech and reader actions');
 
 // ---- version switching ----------------------------------------------------
 mode.value = 'rewrite';
@@ -240,7 +246,7 @@ container.querySelector('.qrs-reader-toolbar button[aria-label="显示列表"]')
 await tick();
 console.log('PAGINATION + FOCUS OK');
 
-// Selecting article text opens the companion directly; the old floating bar is gone.
+// The original selection toolbar offers explicit capture, speech and AI actions.
 const prose = container.querySelector('.qrs-prose');
 const firstText = prose?.querySelector('p')?.firstChild;
 if (!firstText?.textContent) throw new Error('article selection fixture missing');
@@ -249,7 +255,12 @@ range.setStart(firstText, 0);
 range.setEnd(firstText, Math.min(8, firstText.textContent.length));
 window.getSelection().removeAllRanges();
 window.getSelection().addRange(range);
+range.getBoundingClientRect=()=>({left:20,bottom:60,width:100});
 prose.dispatchEvent(new dom.window.MouseEvent('mouseup', { bubbles: true }));
+prose.dispatchEvent(new dom.window.MouseEvent('pointerup', { bubbles: true }));
+await tick();
+const selectionPopup=document.querySelector('.qrs-selection-popup');if(!selectionPopup||selectionPopup.querySelectorAll('button').length!==4)throw Error('original selection toolbar missing');
+selectionPopup.querySelector('button:last-child').click();
 await tick();
 if (!container.querySelector('.qrs-companion')) throw new Error('selection did not open companion');
 if (!container.querySelector('.qrs-workarea.has-companion .qrs-sidebar')) throw new Error('article list unmounted when companion opened');
@@ -261,13 +272,13 @@ if (!container.querySelector('.qrs-channel-picker')) throw new Error('reader top
 container.querySelector('.qrs-channel-close').click();
 container.querySelector('.qrs-companion-header button[aria-label="关闭伴读"]').click();
 await tick();
-console.log('COMPANION OK — text selection, Lucide wand, channel entry, no floating toolbar');
+console.log('COMPANION OK — original selection toolbar, explicit AI action, Lucide wand and channel entry');
 
-// The Harness edition has no note or daily-journal actions.
-for (const label of ['存为 Markdown','阅读笔记','摘录选中文字到工作区日记','导出文章到工作区日记']) {
-  if (container.querySelector(`[aria-label="${label}"]`) || button(label)) throw new Error(`legacy note action still visible: ${label}`);
-}
-console.log('NOTELESS HARNESS UI OK');
+// Note actions retain the original location modal and Markdown workflow.
+container.querySelector('.qrs-actions button[aria-label="更多操作"]').click();await tick();
+if(!button('追加到笔记…')||!button('笔记与摘录设置'))throw Error('note actions missing');
+container.querySelector('.qrs-actions button[aria-label="更多操作"]').click();await tick();
+console.log('ORIGINAL NOTE ACTIONS OK');
 
 // ---- settings dialog (subscriptions + OPML) -------------------------------
 container.querySelector('.qrs-settings-button').click();
@@ -304,19 +315,7 @@ console.log('LAB SETTINGS OK — failed verify preserves draft, Enter verifies, 
 
 button('订阅管理', container.querySelector('.qrs-settings-tabs')).click();
 await tick();
-if (!container.querySelector('.qrs-subscriptions[aria-label="管理订阅"]')) throw new Error('subscription manager missing from settings');
-if (container.querySelector('.qrs-subscriptions-toolbar').textContent.includes('获取失败')) throw new Error('failed-fetch filter should not appear without failed subscriptions');
-if (!text().includes('导入 OPML')) throw new Error('OPML import missing from settings');
-container.querySelector('button[aria-label="编辑 测试源"]').click();
-await tick();
-if (!container.querySelector('.qrs-subscription-editor[aria-modal="true"] input[aria-label="订阅名称"]')) throw new Error('subscription editor must open as a modal');
-container.querySelector('button[aria-label="关闭编辑"]').click();
-await tick();
-container.querySelector('button[aria-label="编辑分组 AI 与技术"]').click();
-await tick();
-if (!container.querySelector('.qrs-subscription-editor[aria-label="编辑订阅分组"]')) throw new Error('group editor missing');
-container.querySelector('button[aria-label="关闭分组编辑"]').click();
-await tick();
+if(!button('打开订阅中心'))throw Error('original subscription center entry missing');
 button('快捷提示词', container.querySelector('.qrs-settings-tabs')).click();
 await tick();
 if (!text().includes('概括要点') || !container.querySelector('.qrs-prompt-manager')) throw new Error('quick prompt management missing');
@@ -330,49 +329,24 @@ await tick();
 if (!text().includes('打赏支持') || !container.querySelector('img[alt="向阳乔木打赏二维码"]')) throw new Error('about/support settings missing');
 console.log('SETTINGS OK — reading, subscriptions/OPML, quick prompts, about/support');
 
-// Discovery keeps filtering and the add action within a compact, scrollable list.
-container.querySelector('.qrs-settings-head button[aria-label="关闭设置"]').click();
-await tick();
-container.querySelector('.qrs-channel').click();
-await tick();
-container.querySelector('button[aria-label="探索订阅"]').click();
-await tick();
-const discover = container.querySelector('.qrs-discover');
-if (!discover?.querySelector('.qrs-discover-results')) throw new Error('discovery list missing');
-if (container.querySelector('.qrs-channel-picker')) throw new Error('channel picker overlaps discovery');
-if (discover.querySelectorAll('.qrs-discover-row').length < 10) throw new Error('too few discovery results');
-if (!discover.querySelector('.qrs-discover-row .qrs-discover-add')) throw new Error('feed action is outside its row');
-const featuredTab = [...discover.querySelectorAll('.qrs-discover-categories button')].find((node) => node.textContent === '精选作者');
-featuredTab.click();
-await tick();
-if (discover.querySelectorAll('.qrs-discover-row').length !== 9) throw new Error('featured category did not filter');
-if (discover.querySelector('.qrs-discover-row .qrs-discover-info span')?.textContent.includes('https://')) throw new Error('feed URL is not compact');
-const readSubscribed = discover.querySelector('button[aria-label="阅读 潮流周刊 · Tw93"]');
-if (!readSubscribed || !readSubscribed.nextElementSibling?.textContent.includes('已订阅')) throw new Error('subscribed feed lacks a reading action');
-readSubscribed.click();
-await tick();
-if (container.querySelector('.qrs-discover') || localStorage.getItem('qrs.channel') !== 'feed:featured') throw new Error('reading a subscribed feed did not switch channels');
-container.querySelector('button[aria-label="探索订阅"]').click();
-await tick();
-const reopened = container.querySelector('.qrs-discover');
-const podcastTab = [...reopened.querySelectorAll('.qrs-discover-categories button')].find((node) => node.textContent === '播客');
-if (!podcastTab) throw new Error('podcast discovery category missing');
-podcastTab.click();
-await tick();
-if (!reopened.textContent.includes('73 个结果') || !reopened.querySelector('.qrs-discover-row .qrs-discover-add')) throw new Error('podcast feeds are not available to subscribe');
-const transcriptTab = [...reopened.querySelectorAll('.qrs-discover-categories button')].find((node) => node.textContent === '海外播客原文');
-if (!transcriptTab) throw new Error('transcript discovery category missing');
-transcriptTab.click();
-await tick();
-if (!reopened.querySelector('input[aria-label="搜索海外播客"]') || !reopened.textContent.includes('获取完整原文')) throw new Error('transcript search is not available');
-console.log('DISCOVERY OK — compact rows, category filtering, inline action');
-
-container.querySelector('.qrs-discover .qrs-discover-close')?.click();
-container.querySelectorAll('.qrs-entry')[1].click();
-for (let i = 0; i < 4; i += 1) await tick();
-if (container.querySelector('.qrs-video-frame')?.getAttribute('src') !== 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ') throw new Error('YouTube article link did not render video player');
-if (container.querySelector('audio')) throw new Error('previous article audio must be removed when switching articles');
-if (!container.querySelector('.qrs-article .qrs-video-frame')) throw new Error('video player must be inside article details');
-
-console.log('CLIENT RENDER TESTS PASSED');
+// Discovery is the original subscription center, with its original tabs/cards.
+container.querySelector('.qrs-settings-head button[aria-label="关闭设置"]').click();await tick();
+container.querySelector('button[aria-label="探索订阅"]').click();await tick();await tick();
+const discover=document.querySelector('.qrs-center');
+if(!discover?.querySelector('.qrs-discovery-grid'))throw Error('original discovery missing');
+if(discover.querySelectorAll('.qrs-discovery-collections button').length!==4)throw Error('original discovery collections missing');
+if(discover.querySelectorAll('.qrs-discovery-card').length<5)throw Error('original discovery cards missing');
+discover.querySelector('[data-tab="library"]').click();await tick();if(!discover.querySelector('.qrs-library'))throw Error('original library tab missing');
+discover.querySelector('.modal-close-button').click();await tick();
+console.log('DISCOVERY OK — original center tabs, collections, cards and lifecycle');
+// Returning to a channel restores its own filters, version and offsets.
+const chooseChannel=async label=>{container.querySelector('.qrs-channel').click();await tick();const picker=container.querySelector('.qrs-channel-picker');const input=picker.querySelector('input[type=search]');Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value').set.call(input,label);input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));await tick();const option=picker.querySelector('.qrs-channel-option');if(!option)throw Error('channel not found: '+label);option.click();for(let n=0;n<4;n++)await tick();};
+await chooseChannel('测试源');container.querySelector('.qrs-entry').click();await tick();await tick();container.querySelector('[data-filter="favorites"]').click();await tick();
+const version=container.querySelector('#qrs-mode');version.value='original';version.dispatchEvent(new dom.window.Event('change',{bubbles:true}));await tick();
+container.querySelector('.qrs-list').scrollTop=123;container.querySelector('.qrs-reader').scrollTop=654;
+await chooseChannel('乔木精选');await chooseChannel('测试源');for(let n=0;n<4;n++)await tick();
+if(container.querySelector('[data-filter="favorites"]').getAttribute('aria-pressed')!=='true')throw Error('channel filter not restored');
+if(container.querySelector('#qrs-mode')?.value!=='original')throw Error('channel reading version not restored');
+if(container.querySelector('.qrs-reader').scrollTop!==654||container.querySelector('.qrs-list').scrollTop!==123)throw Error('channel offsets not restored');
+console.log('CHANNEL MEMORY OK — independent Host state, reading version and scroll positions');
 process.exit(0);
