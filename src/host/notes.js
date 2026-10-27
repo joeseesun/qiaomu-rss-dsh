@@ -1,5 +1,6 @@
+import {parse as parseYaml} from 'yaml';
 import path from 'node:path';
-import {mkdir,open,unlink,readFile} from 'node:fs/promises';
+import {mkdir,open,unlink,readFile,lstat} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {NotesStore} from './notes-store.js';
 import {originalEntry,cachedEntries,hiddenArticle} from './library.js';
@@ -51,6 +52,16 @@ export function createNotesHost(store,root,{fetchImage=fetch,now=()=>new Date()}
  return request=>{const task=lane.then(async()=>{
   if(!request||typeof request.action!=='string')throw Error('Invalid notes operation');
   if(request.action==='snapshot')return snapshot();
+  if(request.action==='read')return notes().read(plain(request.path,1000,'note path'));
+  if(request.action==='entries'){
+   const folder=plain(request.folder,1000,'note source');if(folder!=='/')await notes().resolve(folder,{directory:true});const listing=await snapshot();const entries=[];
+   for(const item of listing.entries){if(folder!=='/'&&item.path!==folder&&!item.path.startsWith(folder+'/'))continue;
+    try{const filename=await notes().resolve(item.path),stat=await lstat(filename);if(!stat.isFile()||stat.size>MAX_NOTE)throw Error('Note exceeds 2 MB or is not a file');const handle=await open(filename,'r');let header;try{const buffer=Buffer.alloc(Math.min(stat.size,65536));const result=await handle.read(buffer,0,buffer.length,0);header=buffer.subarray(0,result.bytesRead).toString('utf8');}finally{await handle.close();}const front=/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(header);let meta={};if(front){try{const parsed=parseYaml(front[1],{maxAliasCount:20});if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed))meta=parsed;}catch{}}
+     const title=typeof meta.title==='string'?meta.title:path.posix.basename(item.path,'.md');let url;for(const key of ['source','url']){if(typeof meta[key]==='string'){try{const parsed=new URL(meta[key]);if(['https:','http:'].includes(parsed.protocol)&&!parsed.username&&!parsed.password){url=parsed.href;break;}}catch{}}}
+     entries.push({path:item.path,title,url,publishedAt:new Date(stat.mtimeMs).toISOString()});
+    }catch(error){if(error.code!=='ENOENT')entries.push({path:item.path,title:path.posix.basename(item.path,'.md'),error:error.message});}
+   }return{entries:entries.sort((a,b)=>(Date.parse(b.publishedAt)||0)-(Date.parse(a.publishedAt)||0))};
+  }
   if(request.action==='save')return save(request);
   if(request.action==='capture')return capture(request);
   if(request.action==='settings'){

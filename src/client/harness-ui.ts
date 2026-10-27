@@ -57,7 +57,7 @@ export class Modal {
 class MenuItem {
  el:AnyElement;label:AnyElement;icon:AnyElement;action?:()=>any;
  constructor(root:AnyElement){this.el=root.createEl('button',{cls:'qaudio-dsh-menu-item',attr:{role:'menuitem'}});this.icon=this.el.createSpan();this.label=this.el.createSpan();}
- setDisabled(on:boolean){this.el.disabled=on;return this;}setTitle(text:string){this.label.setText(text);return this;}setIcon(icon:string){setIcon(this.icon,icon);return this;}setChecked(on:boolean){this.el.setAttr('aria-checked',on);this.el.setAttr('role','menuitemcheckbox');if(on)setIcon(this.icon,'check');return this;}onClick(fn:()=>any){this.action=fn;return this;}
+ setWarning(on=true){this.el.classList.toggle("mod-warning",on);return this;}setDisabled(on:boolean){this.el.disabled=on;return this;}setTitle(text:string){this.label.setText(text);return this;}setIcon(icon:string){setIcon(this.icon,icon);return this;}setChecked(on:boolean){this.el.setAttr('aria-checked',on);this.el.setAttr('role','menuitemcheckbox');if(on)setIcon(this.icon,'check');return this;}onClick(fn:()=>any){this.action=fn;return this;}
 }
 export class Menu {
  el=createEl('div',{cls:'qaudio-dsh-surface qaudio-dsh-menu',attr:{role:'menu'}});items:MenuItem[]=[];previous:Element|null=null;
@@ -74,7 +74,7 @@ class Control {
  constructor(public el:any){} get inputEl(){return this.el;}get selectEl(){return this.el;}get buttonEl(){return this.el;}get sliderEl(){return this.el;}get toggleEl(){return this.el;}getValue(){return this.el.type==='checkbox'?this.el.checked:this.el.value;}setDisabled(on:boolean){this.el.disabled=on;return this;}setCta(){this.el.addClass('mod-cta');return this;}setLimits(min:number,max:number,step:number){Object.assign(this.el,{min,max,step});return this;}setDynamicTooltip(){return this;}setValue(value:any){if(this.el.type==='checkbox')this.el.checked=!!value;else this.el.value=value;return this;}
  setPlaceholder(text:string){this.el.placeholder=text;return this;}addOption(value:string,text:string){this.el.createEl('option',{text,attr:{value}});return this;}
  onChange(fn:any){this.el.addEventListener(this.el.tagName==='INPUT'&&this.el.type!=='checkbox'?'input':'change',()=>Promise.resolve(fn(this.el.type==='checkbox'?this.el.checked:this.el.value)).catch(e=>new Notice(e.message)));return this;}
- setButtonText(text:string){this.el.setText(text);return this;}setIcon(icon:string){const span=this.el.createSpan();setIcon(span,icon);return this;}onClick(fn:any){this.el.addEventListener('click',()=>Promise.resolve().then(fn).catch(e=>new Notice(e.message)));return this;}setWarning(){this.el.addClass('mod-warning');return this;}
+ setButtonText(text:string){this.el.setText(text);return this;}setIcon(icon:string){const span=this.el.createSpan();setIcon(span,icon);return this;}onClick(fn:any){this.el.addEventListener('click',()=>Promise.resolve().then(fn).catch(e=>new Notice(e.message)));return this;}setDestructive(){return this.setWarning();}setWarning(){this.el.addClass('mod-warning');return this;}
 }
 export class Setting {
  el:AnyElement;name:AnyElement;desc:AnyElement;controls:AnyElement;

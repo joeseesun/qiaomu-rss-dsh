@@ -7,7 +7,7 @@ import {Modal,Setting,Notice,TFile,TFolder} from './original-ui';
 
 export function noteMaterial(article,mode,prose,images=true){
  if(!article||!prose)throw Error(t('error.noExportableContent'));
- const bundle={entry:{id:article.key,title:article.title,titleZh:article.titleZh,sourceName:article.channelName,author:article.author,published:article.publishedAt,link:article.url,content:prose.innerHTML,origin:'qiaomu'},rewrite:null,translation:null};
+ const bundle={entry:{id:article.key,title:article.title,titleZh:article.titleZh,sourceName:article.channelName,author:article.author,published:article.publishedAt,link:article.url,content:prose.innerHTML,origin:article.markdownPath?'vault':'qiaomu',markdown:article.markdown,markdownPath:article.markdownPath},rewrite:null,translation:null};
  const body=articleExportBody(bundle,'original',prose.ownerDocument,images);
  const markdown=articleExportMarkdown(bundle,mode,body);if(!markdown)throw Error(t('error.noExportableContent'));
  return{bundle,body,markdown,key:article.key,mode,name:exportBaseName(bundle,mode)};

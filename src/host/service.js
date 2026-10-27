@@ -1,7 +1,10 @@
+import {refreshBackoffMs,refreshIntervalMs} from '../original/feed-schedule';
+import {Marked} from 'marked';
+import {createSourcesHost} from './sources.js';
 import {createNotesHost} from './notes.js';
 import {resolveDshHome} from '@deepseek-ai/dsh-home-paths';
 import {join} from 'node:path';
-import {createLibraryHost,hiddenArticle,laterEntries,cachedEntries} from './library.js';
+import {createLibraryHost,hiddenArticle,laterEntries,cachedEntries,originalEntry} from './library.js';
 import {rssHomeSnapshot} from './home.js';
 import {createRssSpeechHost} from './speech.js';
 /**
@@ -39,6 +42,12 @@ export class RssService extends TypertRemoteService {
     this.speechHost=createRssSpeechHost(this.store);
     this.libraryHost=createLibraryHost(this.store);
     this.notesHost=createNotesHost(this.store,config.notesDir||join(resolveDshHome(),"qiaomu","qiaomu-rss-dsh","notes"));
+    this.sourcesHost=createSourcesHost(this.store,{notes:this.notesHost,refresh:async (ids,force)=>{await this.forEachWithPool(this.store.data.subscriptions.filter(sub=>ids.includes(sub.id)),3,sub=>this.refreshSubscription(sub,force));await this.store.flush();},api:async request=>{
+      if(request.method==='sources')return{sources:await qiaomu.fetchSources(this.origin)};
+      if(request.method==='entries'){const page=await qiaomu.fetchSourceEntries(this.origin,request.id);return{...page,entries:page.entries.map(raw=>{const entry=qiaomu.normalizeQiaomuEntry(raw,'qiaomu:'+request.id);return{...originalEntry(entry,this.store.data),podcastWordCount:raw.podcastWordCount};})};}
+      if(request.method==='podcast'){const show=String(request.id||'').replace(/^podscribe-/,'');const entries=await podscribe.listEpisodes(show);return{entries:entries.map(entry=>({id:`podscribe:${show}/${entry.episode_slug}`,sourceId:request.id,title:entry.title,link:`https://podcasts.happyscribe.com/${show}/${entry.episode_slug}`,publishedTs:Date.parse(entry.published_at)||undefined,podcastWordCount:entry.word_count}))};}
+      throw Error('Unknown source API');
+    }});
     this.videoPlayer = new VideoPlayerServer();
     this.collection = new CollectionManager(this.store, () => this.origin, {
       schedule: (fn, delay) => typeof ctx.timeout === 'function' ? ctx.timeout(fn, delay) : (() => { const timer = setTimeout(fn, delay); timer.unref?.(); return () => clearTimeout(timer); })(),
@@ -52,6 +61,7 @@ export class RssService extends TypertRemoteService {
     }
     ctx.logger.info('qiaomu-rss: service started');
     ctx.effect(() => () => {
+      this.sourcesHost.dispose();
       this.collection.dispose();
       void this.videoPlayer.dispose();
       void this.store.dispose().catch(error => ctx.logger.warn(String(error)));
@@ -70,6 +80,7 @@ export class RssService extends TypertRemoteService {
   async listChannels() {
     await this.ready;
     const data = this.store.data;
+    await this.sourcesHost({action:'snapshot'});
     const channels = [];
     const countUnread = (entries) => entries.reduce((sum, entry) => (data.read[entry.key]||hiddenArticle(data,entry) ? sum : sum + 1), 0);
     channels.push({
@@ -114,7 +125,7 @@ export class RssService extends TypertRemoteService {
       groups.get(key).push(sub);
     }
     for (const [group, subs] of groups) {
-      if (group === '') continue;
+      if (group === ''||(data.sourceLibrary?.subscriptionGroups||[]).some(item=>item.name===group)) continue;
       channels.push({
         key: `group:${group}`,
         kind: 'aggregate',
@@ -135,12 +146,17 @@ export class RssService extends TypertRemoteService {
         lastError: sub.lastError,
       });
     }
+    const library=data.sourceLibrary||{};
+    for(const group of [...(library.subscriptionGroups||[])].sort((a,b)=>a.order-b.order))channels.push({key:'source-group:'+group.id,kind:'aggregate',name:group.name,unread:0,total:0});
+    for(const folder of library.markdownFolders||[])channels.push({key:'vault:'+folder,kind:'vault',name:library.sourceMeta?.['@vault:'+folder]?.name||folder,unread:0,total:0});
+    for(const id of library.followedPodcasts||[])if(!channels.some(channel=>channel.key==='qiaomu:'+id))channels.push({key:id.startsWith('podscribe-')?'show:'+id.slice(10):'qiaomu:'+id,kind:'podcast',name:library.podcastNames?.[id]||id,unread:0,total:0});
     return { channels };
   }
 
   /** Merge the entries behind one channel key (no filtering). */
   entriesOf(channel) {
     const data = this.store.data;
+    if(this.personalChannels?.has(channel))return this.personalChannels.get(channel);
     if (channel === 'podscribe') return [...(data.podcastEntries ?? [])];
     if (channel === undefined || channel === 'all' || channel === 'qiaomu') {
       const stream = data.qiaomuStream.entries;
@@ -195,6 +211,7 @@ export class RssService extends TypertRemoteService {
         }
       }
     }
+    if(typeof channel==='string'&&(channel.startsWith('vault:')||channel.startsWith('show:')||channel.startsWith('source-group:')))await this.loadPersonalChannel(channel);
     entries = filter === 'later' ? laterEntries(data) : this.entriesOf(channel).filter(entry=>!hiddenArticle(data,entry));
     if(filter !== 'later')entries.sort(sortByDate);
     if (search && search.trim() !== '') {
@@ -265,6 +282,14 @@ export class RssService extends TypertRemoteService {
   // Articles & versions
   // ------------------------------------------------------------------
 
+  async loadPersonalChannel(channel){
+    this.personalChannels??=new Map();let entries=[];
+    if(channel.startsWith('vault:')){const folder=channel.slice(6);if(!(this.store.data.sourceLibrary?.markdownFolders||[]).includes(folder))throw Error('Local source is not subscribed');const result=await this.notesHost({action:'entries',folder});entries=result.entries.map(item=>({key:'vault:'+item.path,channelKey:channel,channelName:folder,title:item.title,url:item.url,publishedAt:item.publishedAt,markdownPath:item.path,lastError:item.error}));}
+    else if(channel.startsWith('show:')){const show=channel.slice(5);const episodes=await podscribe.listEpisodes(show);entries=episodes.map(episode=>({key:`podscribe:${show}/${episode.episode_slug}`,channelKey:channel,channelName:this.store.data.sourceLibrary?.podcastNames?.['podscribe-'+show]||show,title:episode.title,publishedAt:episode.published_at,url:`https://podcasts.happyscribe.com/${show}/${episode.episode_slug}`}));}
+    else if(channel.startsWith('source-group:')){const group=channel.slice(13),state=(await this.sourcesHost({action:'snapshot'})).state;for(const [id,meta] of Object.entries(state.sourceMeta)){if(meta.groupId!==group)continue;const sub=this.store.subscriptionById(id);if(sub)entries.push(...this.entriesOf('feed:'+id));else if(id.startsWith('@vault:')){const key='vault:'+id.slice(7);await this.loadPersonalChannel(key);entries.push(...this.entriesOf(key));}else if(id.startsWith('podscribe-')){const key='show:'+id.slice(10);await this.loadPersonalChannel(key);entries.push(...this.entriesOf(key));}else if(state.settings.followedPodcasts.includes(id)){await this.refreshQiaomuChannel(id);entries.push(...this.entriesOf('qiaomu:'+id));}}}
+    this.personalChannels.set(channel,entries);for(const entry of entries)this.store.putArticle(entry);return entries;
+  }
+
   async getArticle(request) {
     const { key } = request ?? {};
     await this.ready;
@@ -277,7 +302,7 @@ export class RssService extends TypertRemoteService {
     this.store.putArticle(article);
     if((this.store.data.readLater||[]).includes(key))await this.libraryHost({action:'later',key,value:false});
     return {
-      article: this.entrySummary(article),
+      article: {...this.entrySummary(article),...(article.markdownPath?{markdownPath:article.markdownPath,markdown:article.markdown}: {})},
       videoPlayerUrl: await this.videoPlayer.url(article),
       html: article.html,
       truncated: article.truncated === true,
@@ -331,6 +356,7 @@ export class RssService extends TypertRemoteService {
 
   /** Resolve the article body, fetching Qiaomu detail when needed. */
   async ensureArticle(key) {
+    if(key.startsWith('vault:')){const filename=key.slice(6),result=await this.notesHost({action:'read',path:filename});const markdown=result.text.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/,'');const prior=this.store.data.articles[key]||{};return{...prior,key,title:prior.title||filename.split('/').at(-1),markdownPath:filename,markdown,html:sanitizeHtml(new Marked().parse(markdown,{async:false}))};}
     const cached = await this.store.getArticle(key);
     if (key.startsWith('collection:')) {
       if (cached?.html) return cached;
@@ -519,11 +545,7 @@ export class RssService extends TypertRemoteService {
         const subs = this.selectSubscriptions(channel);
         outcome.feeds = 0;
         outcome.entries = 0;
-        await this.forEachWithPool(subs, REFRESH_WORKERS, async (sub) => {
-          const count = await this.refreshSubscription(sub);
-          outcome.feeds += 1;
-          outcome.entries += count;
-        });
+        await this.sourcesHost({action:'refresh',ids:subs.map(sub=>sub.id),force:request?.force===true});outcome.feeds=subs.length;outcome.entries=subs.reduce((n,sub)=>n+(sub.entries?.length||0),0);
       }
       if (typeof channel === 'string' && channel.startsWith('qiaomu:') && channel !== 'qiaomu') {
         const sourceId = channel.slice('qiaomu:'.length);
@@ -583,10 +605,16 @@ export class RssService extends TypertRemoteService {
     return cache.entries.length;
   }
 
-  async refreshSubscription(sub) {
+  async refreshSubscription(sub,force=false) {
+    const now=Date.now();
+    if(!force&&(sub.paused||now-(sub.lastFetchedAt||0)<refreshIntervalMs({entries:(sub.entries||[]).map(entry=>({publishedTs:Date.parse(entry.publishedAt)}))})||sub.errorCount>0&&now-(sub.lastErrorAt||0)<refreshBackoffMs(sub.errorCount)*(1+(parseInt(sub.id.slice(-2),16)||0)/1024)))return 0;
     try {
-      const xml = await fetchText(sub.url, FEED_TIMEOUT_MS);
-      const parsed = parseFeed(xml, sub.url);
+      const headers={};if(sub.etag)headers['If-None-Match']=sub.etag;if(sub.lastModified)headers['If-Modified-Since']=sub.lastModified;
+      const response=await fetch(sub.url,{headers,signal:AbortSignal.timeout(FEED_TIMEOUT_MS)});
+      if(response.status===304){sub.lastFetchedAt=Date.now();sub.lastError=undefined;sub.errorCount=0;sub.lastErrorAt=0;sub.status='ok';this.store.touch();return 0;}
+      if(!response.ok)throw Error(`Feed HTTP ${response.status}`);
+      const xml=await limitedFeedText(response);
+      const parsed = parseFeed(xml, sub.url);sub.etag=response.headers.get('etag')||undefined;sub.lastModified=response.headers.get('last-modified')||undefined;sub.errorCount=0;sub.lastErrorAt=0;
       sub.name = sub.name || parsed.title;
       sub.lastFetchedAt = Date.now();
       sub.lastError = undefined;
@@ -596,7 +624,7 @@ export class RssService extends TypertRemoteService {
       this.store.touch();
       return fresh.length;
     } catch (error) {
-      sub.lastError = String(error.message ?? error);
+      sub.lastError = 'Feed refresh failed; retry later';sub.errorCount=(sub.errorCount||0)+1;sub.lastErrorAt=Date.now();
       sub.status = 'error';
       this.store.touch();
       return 0;
@@ -640,12 +668,14 @@ export class RssService extends TypertRemoteService {
     };
   }
 
-  async addSubscription(request) {
+  async addSubscription(request){await this.ready;return this.sourcesHost.legacy(()=>this.addSubscriptionLegacy(request));}
+
+  async addSubscriptionLegacy(request) {
     const { url, name, group } = request ?? {};
     await this.ready;
     const trimmed = String(url ?? '').trim();
     if (!/^https?:\/\//i.test(trimmed)) throw new Error('订阅地址必须是 http(s) URL');
-    if (this.store.data.subscriptions.length >= 100) throw new Error('个人订阅最多 100 个');
+    if (this.store.data.subscriptions.length >= 2000) throw new Error('个人订阅最多 2000 个');
     const existing = this.store.findSubscriptionByUrl(trimmed);
     if (existing) throw new Error(`该订阅已存在: ${existing.name}`);
     const displayName = (name ?? '').trim();
@@ -680,7 +710,9 @@ export class RssService extends TypertRemoteService {
     return { ...sub, entryCount: sub.entries.length };
   }
 
-  async removeSubscription(request) {
+  async removeSubscription(request){await this.ready;return this.sourcesHost.legacy(()=>this.removeSubscriptionLegacy(request));}
+
+  async removeSubscriptionLegacy(request) {
     const id = typeof request === 'string' ? request : request?.id;
     await this.ready;
     let target = id ? this.store.subscriptionById(id) : undefined;
@@ -689,7 +721,9 @@ export class RssService extends TypertRemoteService {
     return this.store.removeSubscription(target.id);
   }
 
-  async updateSubscription(request) {
+  async updateSubscription(request){await this.ready;return this.sourcesHost.legacy(()=>this.updateSubscriptionLegacy(request));}
+
+  async updateSubscriptionLegacy(request) {
     const { id, name, group } = request ?? {};
     await this.ready;
     const sub = this.store.subscriptionById(id);
@@ -718,7 +752,9 @@ export class RssService extends TypertRemoteService {
     return { xml, entries };
   }
 
-  async opmlImport(request) {
+  async opmlImport(request){await this.ready;return this.sourcesHost.legacy(()=>this.opmlImportLegacy(request));}
+
+  async opmlImportLegacy(request) {
     const { xml, urls } = request ?? {};
     await this.ready;
     if (urls !== undefined && (!Array.isArray(urls) || urls.some((url) => typeof url !== 'string'))) throw new Error('无效的订阅选择');
@@ -726,7 +762,7 @@ export class RssService extends TypertRemoteService {
     const stubs = parseOpml(String(xml ?? '')).filter((entry) => urls === undefined || urls.includes(entry.url));
     let added = 0;
     for (const stub of stubs) {
-      if (this.store.data.subscriptions.length >= 100) break;
+      if (this.store.data.subscriptions.length >= 2000) break;
       if (this.store.findSubscriptionByUrl(stub.url)) continue;
       this.store.addSubscription({
         id: `feed:${hashKey(stub.url)}`,
@@ -765,6 +801,8 @@ export class RssService extends TypertRemoteService {
     return { ok: true };
   }
 
+  async sourcesOperation(request){await this.ready;return this.sourcesHost(request);}
+
   async notesOperation(request){await this.ready;return this.notesHost(request);}
 
   async libraryOperation(request){await this.ready;return this.libraryHost(request);}
@@ -798,7 +836,7 @@ export class RssService extends TypertRemoteService {
     'removeSubscription', 'updateSubscription', 'opmlPreview', 'opmlImport', 'opmlExport',
     'searchPodcastShows', 'listPodcastEpisodes', 'importPodcastTranscript',
     'getCollectionSettings', 'configureCollection', 'submitCollection', 'listCollectionJobs', 'collectionSnapshot', 'acknowledgeCollection', 'openCollectionResult',
-    'notesOperation', 'speechOperation', 'homeSnapshot', 'libraryOperation', 'setRead', 'setFavorite', 'getSettings', 'saveSettings', 'prepareChat', 'setReadingContext',
+    'sourcesOperation', 'notesOperation', 'speechOperation', 'homeSnapshot', 'libraryOperation', 'setRead', 'setFavorite', 'getSettings', 'saveSettings', 'prepareChat', 'setReadingContext',
   ];
   const prototype = RssService.prototype;
   for (const name of names) {
@@ -831,14 +869,12 @@ function mergeEntries(cached, fresh) {
 async function fetchText(url, timeoutMs) {
   const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), redirect: 'follow' });
   if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
-  const contentType = response.headers.get('content-type') ?? '';
-  const buffer = await response.arrayBuffer();
-  if (buffer.byteLength > 5 * 1024 * 1024) throw new Error(`feed larger than 5 MB: ${url}`);
-  const text = new TextDecoder(charsetOf(contentType) ?? 'utf-8', { fatal: false }).decode(buffer);
-  return text;
+  return limitedFeedText(response);
 }
 
 function charsetOf(contentType) {
   const match = /charset=([\w-]+)/i.exec(contentType);
   return match?.[1];
 }
+
+async function limitedFeedText(response){const max=5*1024*1024;if(Number(response.headers.get('content-length'))>max){await response.body?.cancel();throw Error('Feed exceeds 5 MB');}const chunks=[];let size=0;for await(const chunk of response.body){size+=chunk.length;if(size>max)throw Error('Feed exceeds 5 MB');chunks.push(chunk);}return new TextDecoder(charsetOf(response.headers.get('content-type')||'')||'utf-8').decode(Buffer.concat(chunks));}

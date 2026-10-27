@@ -22,7 +22,7 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "test": "node tests/collection.mjs && node tests/collection-client.mjs && node tests/smoke.mjs && node tests/article-context.mjs && node tests/reading-scope.mjs && node tests/video.mjs && node tests/platform.mjs && node tests/video-player.mjs && node tests/video-player-client.mjs && node tests/reading-version.mjs && node tests/podscribe.mjs && node tests/render.mjs && node tests/harness-integration.mjs && node tests/companion-draft.mjs && node tests/request-cache.mjs && node tests/list-window.mjs && node tests/body-store.mjs && node tests/catalog-cache.mjs && node --test tests/original-speech.mjs tests/notes.mjs",
+    "test": "node tests/collection.mjs && node tests/collection-client.mjs && node tests/smoke.mjs && node tests/article-context.mjs && node tests/reading-scope.mjs && node tests/video.mjs && node tests/platform.mjs && node tests/video-player.mjs && node tests/video-player-client.mjs && node tests/reading-version.mjs && node tests/podscribe.mjs && node tests/render.mjs && node tests/harness-integration.mjs && node tests/companion-draft.mjs && node tests/request-cache.mjs && node tests/list-window.mjs && node tests/body-store.mjs && node tests/catalog-cache.mjs && node --test tests/original-speech.mjs tests/notes.mjs tests/sources.mjs",
     "prepack": "npm run build && node scripts/verify-package.mjs",
     "check": "npm run build && npm test && node scripts/verify-package.mjs"
   },
@@ -111,6 +111,7 @@
     "moment": "2.31.0",
     "turndown": "7.2.4",
     "turndown-plugin-gfm": "1.0.2",
+    "yaml": "2.9.1",
     "zod": "4.6.6"
   }
 }

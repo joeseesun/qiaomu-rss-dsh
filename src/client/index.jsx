@@ -1,3 +1,4 @@
+import {createSourcesClient} from './sources.js';
 import {createNotesClient} from './notes.js';
 import {createLibraryClient} from './library.js';
 import {createRssHomeProvider,createHomeActions} from './home.js';
@@ -63,6 +64,7 @@ const TYPERT_REMOTE = {
     method('homeSnapshot',false),
     method('libraryOperation'),
     method('notesOperation'),
+    method('sourcesOperation'),
     method('getSettings', false),
     method('saveSettings'),
     ...['prepareChat','setReadingContext'].map(name => method(name)),
@@ -116,6 +118,7 @@ function registerReader(ctx) {
     ...nativeChatBridge(ctx),
     homeActions,
     homeSnapshot:()=>call('homeSnapshot'),
+    sourcesOperation:request=>call('sourcesOperation',request),
     notesOperation:request=>call('notesOperation',request),
     libraryOperation:request=>call('libraryOperation',request),
     ...shareRequests({
@@ -129,7 +132,7 @@ function registerReader(ctx) {
       listPodcastEpisodes: (show, page) => call('listPodcastEpisodes', { show, page }),
       importPodcastTranscript: (show, episode) => call('importPodcastTranscript', { show, episode }),
       generateVersion: (key, kind) => call('generateVersion', { key, kind }),
-      refresh: (channel) => call('refresh', { channel }),
+      refresh: (channel,force=false) => call('refresh', { channel,force }),
       addSubscription: (params) => call('addSubscription', params),
       removeSubscription: (id) => call('removeSubscription', { id }),
       listSubscriptions: () => call('listSubscriptions'),
@@ -147,6 +150,8 @@ function registerReader(ctx) {
 
   ctx.inject(['qiaomuHome'],ready=>ready.effect(()=>ready.qiaomuHome.register(PLUGIN_ID,createRssHomeProvider({load:api.homeSnapshot,open:action=>{ctx.layout.selectPanel(PANEL_ID);homeActions.send(action);},subscribe:homeActions.subscribe}),{label:'乔木 RSS'})));
   ctx.effect(()=>()=>homeActions.dispose());
+  api.sources=createSourcesClient(api);
+  ctx.effect(()=>()=>api.sources.dispose());
   api.notes=createNotesClient(api);
   ctx.effect(()=>()=>api.notes.dispose());
   api.library=createLibraryClient(api);

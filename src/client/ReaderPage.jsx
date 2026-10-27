@@ -248,7 +248,7 @@ function ensureStyles() {
   stylesReady = true;
   const style = document.createElement('style');
   style.dataset.plugin = 'qiaomu-rss-dsh';
-  style.textContent = PANEL_CSS + REFINEMENTS + ORIGINAL_CSS + ORIGINAL_HOST + ORIGINAL_BOUNDARY;
+  style.textContent = PANEL_CSS + REFINEMENTS + ORIGINAL_HOST + ORIGINAL_CSS + ORIGINAL_BOUNDARY;
   document.head.appendChild(style);
 }
 
@@ -525,7 +525,7 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
   const refresh = async (target) => {
     setRefreshing(true);
     if (target === 'collection') { setCollectionRevision(value => value + 1); setRefreshing(false); return; }
-    const outcome = await run(api.refresh(target), { errorPrefix: '刷新失败' });
+    const outcome = await run(api.refresh(target,true), { errorPrefix: '刷新失败' });
     setRefreshing(false);
     if (outcome) {
       const bits = [];
@@ -653,7 +653,8 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
   const notesContext=useRef();notesContext.current=activeArticle?{material:()=>noteMaterial(activeArticle.article,active,proseRef.current,reading.showImages!==false),ask:quote=>{const found=selectedPassage(proseRef.current);setPassage(found);openCompanion(quote);},speak:range=>api.speech.startSelection(range)}:null;
   useEffect(()=>api.notes?.mount(rootRef.current,()=>notesContext.current),[api]);
   useEffect(()=>{api.notes?.clear();},[api,activeArticle?.article?.key,active]);
-  const homeOpen=useRef();homeOpen.current=action=>{if(action?.kind==='refresh'){void loadPage(undefined,true);void loadChannels();if(action.deletedKey){if((selected?.article?.key||selected?.key)===action.deletedKey)articleRequest.current++;setSelected(current=>(current?.article?.key||current?.key)===action.deletedKey?undefined:current);}}else if(action?.key)void openArticle(action.key);else if(action?.kind==='subscriptions'){setSettingsEntry({tab:'sources',addPrompt:false});setDialog('settings');}};
+  const openPersonalSource=async id=>{await loadChannels();selectChannel(id.startsWith('@group:')?'source-group:'+id.slice(7):id.startsWith('@vault:')?'vault:'+id.slice(7):(id.startsWith('podscribe-')?'show:'+id.slice(10):!id.startsWith('feed:')?'qiaomu:'+id:'feed:'+id));};
+  const homeOpen=useRef();homeOpen.current=action=>{if(action?.kind==='refresh'){void loadPage(undefined,true);void loadChannels();if(action.deletedKey){if((selected?.article?.key||selected?.key)===action.deletedKey)articleRequest.current++;setSelected(current=>(current?.article?.key||current?.key)===action.deletedKey?undefined:current);}}else if(action?.kind==='source'){void openPersonalSource(action.source);}else if(action?.key)void openArticle(action.key);else if(action?.kind==='subscriptions'){void run(api.sources.open('library'));}};
   useEffect(()=>api.homeActions?.attach(action=>homeOpen.current?.(action)),[api]);
   const theme = reading.readingTheme && reading.readingTheme !== 'auto' ? reading.readingTheme : null;
 
@@ -676,7 +677,7 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
               <span className="qrs-channel-label">{currentChannel?.name ?? '乔木精选'}</span>
               <Icon name="chevron-down" size={13} />
             </button>
-            <button type="button" className="qrs-icon" title="探索订阅" aria-label="探索订阅" onClick={() => setDialog('discover')}><Icon name="plus" /></button>
+            <button type="button" className="qrs-icon" title="探索订阅" aria-label="探索订阅" onClick={() => {setPickerOpen(false);void run(api.sources.open('discover'));}}><Icon name="plus" /></button>
             {channel !== 'collection' && <button type="button" className="qrs-icon" title="搜索" aria-label="搜索" onClick={() => { setSearchOpen((open) => !open); setTimeout(() => searchInput.current?.focus(), 0); }}><Icon name="search" /></button>}
             {channel !== 'collection' && <button type="button" className={`qrs-icon${refreshing ? ' is-loading' : ''}`} title="刷新" aria-label="刷新" onClick={() => void refresh(channel)}><Icon name="refresh-cw" /></button>}
           </div>
@@ -865,7 +866,7 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
       <OriginalAudioDock article={activeArticle?.article} audio={audioUrl} onOpen={key=>void openArticle(key)}/>
       {pickerOpen && !dialog && (
         <ChannelPicker channels={channels} current={channel} anchor={pickerAnchor} onClose={() => setPickerOpen(false)}
-          onSelect={selectChannel} onManage={() => { setPickerOpen(false); setDialog('settings'); }} />
+          onSelect={selectChannel} onManage={() => { setPickerOpen(false); void run(api.sources.open('library')); }} />
       )}
       {dialog === 'discover' && <Discover api={api} onClose={() => setDialog(undefined)} onAdded={loadChannels} onRead={(key) => {setDialog(undefined);selectChannel(key);}} onPodcastImported={async (key) => {setDialog(undefined);selectChannel('podscribe');await loadChannels();await openArticle(key);}} />}
       {dialog === 'add' && <AddFeedDialog api={api} onClose={() => setDialog(undefined)} onDone={async () => { await loadChannels(); await loadPage(undefined, true); }} notify={notify} />}

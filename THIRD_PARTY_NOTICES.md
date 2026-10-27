@@ -8,3 +8,5 @@
 - Chinese Independent Blogs: retained upstream directory license in `vendor/chinese-independent-blogs/LICENSE`. Catalog data remains attributed to its upstream source; plugin GPL does not relicense external article content.
 
 Full corresponding source and build scripts are distributed through this repository and release source archives. No runtime user settings, credentials or cached article bodies are included.
+
+- Tidings RSS catalog: original snapshot from Qiaomu RSS 0.32.9, CC0-1.0; catalog compilation license and ownership boundaries are retained under `vendor/tidings-rss`. No product screenshots or third-party article bodies are copied.

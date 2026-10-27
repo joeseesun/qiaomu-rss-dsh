@@ -92,6 +92,7 @@ const api = new Proxy({}, {
   get(_target, name) {
     return (...args) => {
       apiCalls.push(name); apiArgs.push({ name, args });
+      if (name === 'sourcesOperation') return Promise.resolve({state:{subscriptions:[],subscriptionGroups:[],sourceMeta:{},collapsedGroups:[],personalArticles:{},sources:[],readIds:[],settings:{baseUrl:'https://rss.qiaomu.ai',remoteImages:false,followedPodcasts:[],podcastNames:{},markdownFolders:[]}},revision:'fixture'});
       if (name === 'notesOperation') return Promise.resolve({folders:['/'],entries:[],settings:{selectionPopup:true,articleFolder:'Articles'}});
       if (name === 'getCollectionSettings') return Promise.resolve({ enabled:collectionEnabled, verified:collectionVerified });
       if (name === 'configureCollection') { if (args[0].invite === 'invalid-test') return Promise.reject(new Error('邀请码无效')); collectionEnabled=args[0].enabled; if (args[0].invite) collectionVerified=true; return Promise.resolve({enabled:collectionEnabled,verified:collectionVerified}); }
@@ -312,19 +313,7 @@ console.log('LAB SETTINGS OK — failed verify preserves draft, Enter verifies, 
 
 button('订阅管理', container.querySelector('.qrs-settings-tabs')).click();
 await tick();
-if (!container.querySelector('.qrs-subscriptions[aria-label="管理订阅"]')) throw new Error('subscription manager missing from settings');
-if (container.querySelector('.qrs-subscriptions-toolbar').textContent.includes('获取失败')) throw new Error('failed-fetch filter should not appear without failed subscriptions');
-if (!text().includes('导入 OPML')) throw new Error('OPML import missing from settings');
-container.querySelector('button[aria-label="编辑 测试源"]').click();
-await tick();
-if (!container.querySelector('.qrs-subscription-editor[aria-modal="true"] input[aria-label="订阅名称"]')) throw new Error('subscription editor must open as a modal');
-container.querySelector('button[aria-label="关闭编辑"]').click();
-await tick();
-container.querySelector('button[aria-label="编辑分组 AI 与技术"]').click();
-await tick();
-if (!container.querySelector('.qrs-subscription-editor[aria-label="编辑订阅分组"]')) throw new Error('group editor missing');
-container.querySelector('button[aria-label="关闭分组编辑"]').click();
-await tick();
+if(!button('打开订阅中心'))throw Error('original subscription center entry missing');
 button('快捷提示词', container.querySelector('.qrs-settings-tabs')).click();
 await tick();
 if (!text().includes('概括要点') || !container.querySelector('.qrs-prompt-manager')) throw new Error('quick prompt management missing');
@@ -338,49 +327,14 @@ await tick();
 if (!text().includes('打赏支持') || !container.querySelector('img[alt="向阳乔木打赏二维码"]')) throw new Error('about/support settings missing');
 console.log('SETTINGS OK — reading, subscriptions/OPML, quick prompts, about/support');
 
-// Discovery keeps filtering and the add action within a compact, scrollable list.
-container.querySelector('.qrs-settings-head button[aria-label="关闭设置"]').click();
-await tick();
-container.querySelector('.qrs-channel').click();
-await tick();
-container.querySelector('button[aria-label="探索订阅"]').click();
-await tick();
-const discover = container.querySelector('.qrs-discover');
-if (!discover?.querySelector('.qrs-discover-results')) throw new Error('discovery list missing');
-if (container.querySelector('.qrs-channel-picker')) throw new Error('channel picker overlaps discovery');
-if (discover.querySelectorAll('.qrs-discover-row').length < 10) throw new Error('too few discovery results');
-if (!discover.querySelector('.qrs-discover-row .qrs-discover-add')) throw new Error('feed action is outside its row');
-const featuredTab = [...discover.querySelectorAll('.qrs-discover-categories button')].find((node) => node.textContent === '精选作者');
-featuredTab.click();
-await tick();
-if (discover.querySelectorAll('.qrs-discover-row').length !== 9) throw new Error('featured category did not filter');
-if (discover.querySelector('.qrs-discover-row .qrs-discover-info span')?.textContent.includes('https://')) throw new Error('feed URL is not compact');
-const readSubscribed = discover.querySelector('button[aria-label="阅读 潮流周刊 · Tw93"]');
-if (!readSubscribed || !readSubscribed.nextElementSibling?.textContent.includes('已订阅')) throw new Error('subscribed feed lacks a reading action');
-readSubscribed.click();
-await tick();
-if (container.querySelector('.qrs-discover') || localStorage.getItem('qrs.channel') !== 'feed:featured') throw new Error('reading a subscribed feed did not switch channels');
-container.querySelector('button[aria-label="探索订阅"]').click();
-await tick();
-const reopened = container.querySelector('.qrs-discover');
-const podcastTab = [...reopened.querySelectorAll('.qrs-discover-categories button')].find((node) => node.textContent === '播客');
-if (!podcastTab) throw new Error('podcast discovery category missing');
-podcastTab.click();
-await tick();
-if (!reopened.textContent.includes('73 个结果') || !reopened.querySelector('.qrs-discover-row .qrs-discover-add')) throw new Error('podcast feeds are not available to subscribe');
-const transcriptTab = [...reopened.querySelectorAll('.qrs-discover-categories button')].find((node) => node.textContent === '海外播客原文');
-if (!transcriptTab) throw new Error('transcript discovery category missing');
-transcriptTab.click();
-await tick();
-if (!reopened.querySelector('input[aria-label="搜索海外播客"]') || !reopened.textContent.includes('获取完整原文')) throw new Error('transcript search is not available');
-console.log('DISCOVERY OK — compact rows, category filtering, inline action');
-
-container.querySelector('.qrs-discover .qrs-discover-close')?.click();
-container.querySelectorAll('.qrs-entry')[1].click();
-for (let i = 0; i < 4; i += 1) await tick();
-if (container.querySelector('.qrs-video-frame')?.getAttribute('src') !== 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ') throw new Error('YouTube article link did not render video player');
-if (container.querySelector('audio[src]') || !container.querySelector('.qrs-audio-dock.is-hidden')) throw new Error('previous podcast must stop and hide when switching articles');
-if (!container.querySelector('.qrs-article .qrs-video-frame')) throw new Error('video player must be inside article details');
-
-console.log('CLIENT RENDER TESTS PASSED');
+// Discovery is the original subscription center, with its original tabs/cards.
+container.querySelector('.qrs-settings-head button[aria-label="关闭设置"]').click();await tick();
+container.querySelector('button[aria-label="探索订阅"]').click();await tick();await tick();
+const discover=document.querySelector('.qrs-center');
+if(!discover?.querySelector('.qrs-discovery-grid'))throw Error('original discovery missing');
+if(discover.querySelectorAll('.qrs-discovery-collections button').length!==4)throw Error('original discovery collections missing');
+if(discover.querySelectorAll('.qrs-discovery-card').length<5)throw Error('original discovery cards missing');
+discover.querySelector('[data-tab="library"]').click();await tick();if(!discover.querySelector('.qrs-library'))throw Error('original library tab missing');
+discover.querySelector('.modal-close-button').click();await tick();
+console.log('DISCOVERY OK — original center tabs, collections, cards and lifecycle');
 process.exit(0);

@@ -1,0 +1,160 @@
+import createDOMPurify from 'dompurify';
+import { safeUrl, type Entry, type Subscription } from './model';
+import { fail, t } from './i18n';
+
+export const MAX_SUBSCRIPTIONS = 2000;
+const MAX_XML = 5 * 1024 * 1024;
+const MAX_STORED_FEED = 1024 * 1024;
+export interface FeedInput { url: string; name: string; group: string }
+export function feedUrl(value: string): string {
+  const safe = safeUrl(value.trim());
+  if (!safe) fail('error.feedUrlInvalid');
+  const url = new URL(safe); url.hash = ''; return url.href;
+}
+export async function stableId(value: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+export function xmlDocument(value: string, doc: Document): Document {
+  if (new TextEncoder().encode(value).byteLength > MAX_XML) fail('error.xmlTooLarge');
+  if (/<!DOCTYPE|<!ENTITY/i.test(value)) fail('error.xmlDtdUnsupported');
+  const win = doc.defaultView;
+  if (!win) fail('error.windowUnavailable');
+  const parsed = new win.DOMParser().parseFromString(value, 'application/xml');
+  if (parsed.getElementsByTagName('parsererror').length) fail('error.xmlInvalid');
+  return parsed;
+}
+function children(node: Element, name: string): Element[] {
+  // Atom content and Media RSS attachments share a local name; keep Atom lookups in its namespace.
+  return Array.from(node.children).filter(child => child.localName === name &&
+    (node.namespaceURI !== 'http://www.w3.org/2005/Atom' || child.namespaceURI === node.namespaceURI));
+}
+function child(node: Element, name: string): Element | undefined { return children(node, name)[0]; }
+function text(node: Element, name: string): string { return child(node, name)?.textContent?.trim() || ''; }
+function baseUrl(node: Element, fallback: string): string {
+  const chain: Element[] = []; let current: Element | null = node;
+  while (current) { chain.unshift(current); current = current.parentElement; }
+  return chain.reduce((base, el) => safeUrl(el.getAttributeNS('http://www.w3.org/XML/1998/namespace', 'base') || '', base) || base, fallback);
+}
+function hasXmlBase(node: Element): boolean {
+  let current: Element | null = node;
+  while (current) { if (current.hasAttributeNS('http://www.w3.org/XML/1998/namespace', 'base')) return true; current = current.parentElement; }
+  return false;
+}
+function escapeXml(value: string): string { return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;'); }
+function plain(value: string, doc: Document): string {
+  return createDOMPurify(doc.defaultView!).sanitize(value, { RETURN_DOM_FRAGMENT: true, ALLOWED_TAGS: [] }).textContent?.trim() || '';
+}
+function atomContent(node?: Element): string {
+  if (!node) return '';
+  if (node.getAttribute('type') === 'xhtml') return Array.from(node.children).map(el => el.outerHTML).join('');
+  const value = node.textContent || '';
+  return node.getAttribute('type') === 'html' ? value : `<p>${escapeXml(value)}</p>`;
+}
+function contentWithBase(html: string, base: string, doc: Document): { html: string; image?: string } {
+  // Parsing into an inert sanitized fragment also prevents source HTML from making requests.
+  const fragment = createDOMPurify(doc.defaultView!).sanitize(html, { RETURN_DOM_FRAGMENT: true, ADD_ATTR: ['xml:base'], FORBID_TAGS: ['style', 'iframe'] });
+  for (const el of fragment.querySelectorAll('[href],[src]')) {
+    for (const attr of ['href', 'src']) {
+      const raw = el.getAttribute(attr); if (!raw) continue;
+      const url = safeUrl(raw, baseUrl(el, base));
+      if (url) el.setAttribute(attr, url); else el.removeAttribute(attr);
+    }
+  }
+  const image = fragment.querySelector('img[src]')?.getAttribute('src') || undefined;
+  return { html: Array.from(fragment.childNodes).map(node => node.nodeType === 1 ? (node as Element).outerHTML : escapeXml(node.textContent || '')).join(''), image };
+}
+function entryImage(item: Element, contentImage: string | undefined, base: string): string | undefined {
+  for (const node of Array.from(item.getElementsByTagName('*'))) {
+    const name = node.localName.toLocaleLowerCase();
+    const type = node.getAttribute('type') || '';
+    const isImage = name === 'thumbnail' ||
+      (name === 'content' && (node.getAttribute('medium') === 'image' || type.startsWith('image/'))) ||
+      (name === 'enclosure' && type.startsWith('image/')) ||
+      (name === 'link' && node.getAttribute('rel') === 'enclosure' && type.startsWith('image/'));
+    if (!isImage) continue;
+    const raw = node.getAttribute('url') || node.getAttribute('href');
+    const resolved = raw ? safeUrl(raw, baseUrl(node, base)) : null;
+    if (resolved) return resolved;
+  }
+  return contentImage ? safeUrl(contentImage, base) || undefined : undefined;
+}
+function entryAudio(item: Element, base: string): Entry['audio'] {
+  for (const node of Array.from(item.children)) {
+    const name = node.localName.toLowerCase();
+    if (name !== 'enclosure' && name !== 'content' && !(name === 'link' && node.getAttribute('rel') === 'enclosure')) continue;
+    if (name === 'content' && node.getAttribute('medium') !== 'audio' && !node.getAttribute('type')?.toLowerCase().startsWith('audio/')) continue;
+    const type = node.getAttribute('type')?.toLowerCase() || '';
+    if (type && !type.startsWith('audio/')) continue;
+    const raw = node.getAttribute('url') || node.getAttribute('href');
+    const resolved = raw ? safeUrl(raw, baseUrl(node, base)) : null;
+    if (resolved?.startsWith('https://')) return { url: resolved, type: type || null };
+  }
+  return null;
+}
+export async function parseFeed(xml: string, url: string, doc: Document): Promise<{ name: string; entries: Entry[]; site?: string; image?: string }> {
+  const root = xmlDocument(xml, doc).documentElement;
+  const atom = root.localName === 'feed' && root.namespaceURI === 'http://www.w3.org/2005/Atom';
+  const channel = child(root, 'channel');
+  if (!atom && !(['rss', 'RDF'].includes(root.localName) && channel)) fail('error.notFeed');
+  const parent = atom ? root : channel!;
+  const name = plain(text(parent, 'title'), doc).slice(0, 200) || new URL(url).hostname;
+  const sourceId = `local:${await stableId(url)}`;
+  const items = atom ? children(root, 'entry') : children(root.localName === 'RDF' ? root : parent, 'item');
+  const entries: Entry[] = []; const ids = new Set<string>(); let size = 0;
+  for (const item of items.slice(0, 200)) {
+    const linkNode = atom ? children(item, 'link').find(el => !el.getAttribute('rel') || el.getAttribute('rel') === 'alternate') : child(item, 'link');
+    const linkValue = atom ? linkNode?.getAttribute('href') : linkNode?.textContent;
+    const base = baseUrl(item, url);
+    const link = linkValue ? safeUrl(linkValue.trim(), linkNode ? baseUrl(linkNode, base) : base) : null;
+    const contentNode = atom ? child(item, 'content') || child(item, 'summary') : child(item, 'encoded') || child(item, 'description');
+    const raw = atom ? atomContent(contentNode) : contentNode?.textContent || '';
+    const title = plain(atom ? atomContent(child(item, 'title')) : text(item, 'title'), doc).slice(0, 300) || plain(raw, doc).slice(0, 80) || t('untitled.article');
+    const published = (atom ? text(item, 'published') || text(item, 'updated') : text(item, 'pubDate') || text(item, 'date')) || '';
+    const identity = (atom ? text(item, 'id') : text(item, 'guid')) || link || `${title}\n${published}`;
+    const id = `local-${await stableId(`${sourceId}\n${identity}`)}`;
+    if (ids.has(id)) continue; ids.add(id);
+    const publishedTs = Date.parse(published);
+    const contentBase = contentNode && hasXmlBase(contentNode) ? baseUrl(contentNode, url) : link || base;
+    const parsedContent = contentWithBase(raw.slice(0, 100_000), contentBase, doc);
+    const entry: Entry = { id, sourceId, origin: 'local', sourceName: name, title, link: link || url, image: entryImage(item, parsedContent.image, contentBase), audio: entryAudio(item, base),
+      published, publishedTs: Number.isNaN(publishedTs) ? null : publishedTs,
+      author: atom ? text(child(item, 'author') || root, 'name') : text(item, 'creator') || text(item, 'author'),
+      summary: plain(raw, doc).slice(0, 240), content: (parsedContent.html || t('reader.noFeedContent')) + (raw.length > 100_000 ? t('reader.truncatedContent') : '') };
+    size += new TextEncoder().encode(JSON.stringify(entry)).byteLength;
+    if (size > MAX_STORED_FEED) break;
+    entries.push(entry);
+    if (entries.length % 10 === 0) await new Promise<void>(resolve => doc.defaultView!.setTimeout(resolve, 0));
+    if (entries.length === 50) break;
+  }
+  entries.sort((a, b) => (b.publishedTs || 0) - (a.publishedTs || 0));
+  const rootSite = root.localName === 'feed' ? Array.from(root.children).find(el => el.localName === 'link' && (!el.getAttribute('rel') || el.getAttribute('rel') === 'alternate'))?.getAttribute('href') : text(child(root, 'channel') || root, 'link');
+  const site = rootSite ? safeUrl(rootSite, url) || undefined : undefined;
+  const rawImage = text(child(parent, 'image') || parent, 'url') || text(root, 'icon') || text(root, 'logo');
+  const image = rawImage ? safeUrl(rawImage, site || url) || undefined : undefined;
+  return { name, entries, site, image };
+}
+export function parseOpml(xml: string, doc: Document): { feeds: FeedInput[]; skipped: number } {
+  const root = xmlDocument(xml, doc).documentElement;
+  if (root.localName !== 'opml' || !child(root, 'body')) fail('error.opmlInvalid');
+  const feeds: FeedInput[] = []; const seen = new Set<string>(); let skipped = 0;
+  for (const node of Array.from(root.getElementsByTagName('outline'))) {
+    const raw = node.getAttribute('xmlUrl') || node.getAttribute('xmlurl'); if (!raw) continue;
+    try {
+      const url = feedUrl(raw);
+      if (seen.has(url)) { skipped++; continue; } seen.add(url);
+      const groups: string[] = []; let parent = node.parentElement;
+      while (parent?.localName === 'outline') { const label = parent.getAttribute('text') || parent.getAttribute('title'); if (label) groups.unshift(label); parent = parent.parentElement; }
+      feeds.push({ url, name: (node.getAttribute('title') || node.getAttribute('text') || new URL(url).hostname).slice(0, 200), group: groups.join(' / ').slice(0, 100) });
+    } catch { skipped++; }
+  }
+  if (!feeds.length) fail('error.opmlEmpty');
+  return { feeds, skipped };
+}
+export function exportOpml(feeds: Pick<Subscription, 'url' | 'name' | 'group'>[]): string {
+  const groups = new Map<string, typeof feeds>();
+  for (const feed of feeds) { const group = groups.get(feed.group) || []; group.push(feed); groups.set(feed.group, group); }
+  const outline = (feed: typeof feeds[number]) => `<outline type="rss" text="${escapeXml(feed.name)}" title="${escapeXml(feed.name)}" xmlUrl="${escapeXml(feed.url)}"/>`;
+  const body = Array.from(groups, ([group, values]) => group ? `<outline text="${escapeXml(group)}">\n${values.map(outline).join('\n')}\n</outline>` : values.map(outline).join('\n')).join('\n');
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<opml version="2.0"><head><title>Qiaomu AI RSS subscriptions</title></head><body>\n${body}\n</body></opml>\n`;
+}
