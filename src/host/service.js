@@ -1,3 +1,4 @@
+import {rssHomeSnapshot} from './home.js';
 import {createRssSpeechHost} from './speech.js';
 /**
  * The `rss` Host service: subscriptions, feed fetching, Qiaomu integration,
@@ -753,6 +754,8 @@ export class RssService extends TypertRemoteService {
     return { ok: true };
   }
 
+  async homeSnapshot(){await this.ready;return rssHomeSnapshot(this.store.data);}
+
   async speechOperation(request){await this.ready;return this.speechHost(request);}
 
   async getSettings() {
@@ -780,7 +783,7 @@ export class RssService extends TypertRemoteService {
     'removeSubscription', 'updateSubscription', 'opmlPreview', 'opmlImport', 'opmlExport',
     'searchPodcastShows', 'listPodcastEpisodes', 'importPodcastTranscript',
     'getCollectionSettings', 'configureCollection', 'submitCollection', 'listCollectionJobs', 'collectionSnapshot', 'acknowledgeCollection', 'openCollectionResult',
-    'speechOperation', 'setRead', 'setFavorite', 'getSettings', 'saveSettings', 'prepareChat', 'setReadingContext',
+    'speechOperation', 'homeSnapshot', 'setRead', 'setFavorite', 'getSettings', 'saveSettings', 'prepareChat', 'setReadingContext',
   ];
   const prototype = RssService.prototype;
   for (const name of names) {

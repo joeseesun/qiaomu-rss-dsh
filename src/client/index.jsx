@@ -1,3 +1,4 @@
+import {createRssHomeProvider,createHomeActions} from './home.js';
 import {createRssSpeechClient} from './speech.js';
 /**
  * qiaomu-rss client half: mounts the `rss` Remote namespace and registers the
@@ -57,6 +58,7 @@ const TYPERT_REMOTE = {
     method('setRead'),
     method('setFavorite'),
     method('speechOperation'),
+    method('homeSnapshot',false),
     method('getSettings', false),
     method('saveSettings'),
     ...['prepareChat','setReadingContext'].map(name => method(name)),
@@ -89,13 +91,15 @@ const SHARED_READS = new Set([
 ]);
 
 function registerReader(ctx) {
+  const homeActions=createHomeActions();
+  const mutations=new Set(['getArticle','setRead','setFavorite','refresh','addSubscription','removeSubscription','updateSubscription','opmlImport','importPodcastTranscript','openCollectionResult']);
   const call = async (name, ...args) => {
     const namespace = ctx.remote.rss;
     if (!namespace || typeof namespace[name] !== 'function') {
       throw new Error('qiaomu-rss 阅读服务未就绪,请稍后重试');
     }
     const result = await namespace[name](...args);
-    if (result.ok) return result.value;
+    if (result.ok) {if(mutations.has(name))homeActions.changed();return result.value;}
     throw result.error;
   };
 
@@ -106,6 +110,8 @@ function registerReader(ctx) {
   // that must keep returning values instead of promises.
   const api = {
     ...nativeChatBridge(ctx),
+    homeActions,
+    homeSnapshot:()=>call('homeSnapshot'),
     ...shareRequests({
       ...Object.fromEntries(['getCollectionSettings', 'configureCollection', 'submitCollection', 'listCollectionJobs', 'collectionSnapshot', 'acknowledgeCollection', 'openCollectionResult'].map(name => [name, params => call(name, params)])),
       prepareChat: (params) => call('prepareChat', params),
@@ -133,6 +139,8 @@ function registerReader(ctx) {
     }, SHARED_READS),
   };
 
+  ctx.inject(['qiaomuHome'],ready=>ready.effect(()=>ready.qiaomuHome.register(PLUGIN_ID,createRssHomeProvider({load:api.homeSnapshot,open:action=>{ctx.layout.selectPanel(PANEL_ID);homeActions.send(action);},subscribe:homeActions.subscribe}),{label:'乔木 RSS'})));
+  ctx.effect(()=>()=>homeActions.dispose());
   api.speech=createRssSpeechClient(api);
   ctx.inject(['qiaomuAudio'],ready=>api.speech.connect(ready.qiaomuAudio));
   ctx.effect(()=>()=>api.speech.dispose());

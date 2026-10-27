@@ -56,7 +56,7 @@ const fakeCtx = {
     get rss() { throw new Error('cannot get property "remote.rss" without inject'); },
   },
   inject(dependencies, callback) {
-    if (dependencies.includes('sessions') || dependencies.includes('qiaomuAudio')) return;
+    if (dependencies.includes('sessions') || dependencies.includes('qiaomuAudio') || dependencies.includes('qiaomuHome')) return;
     if (!dependencies.includes('remote.rss')) throw new Error('missing rss namespace dependency');
     return callback({ ...this, remote: { rss: new Proxy({}, {
       get(_target, name) {

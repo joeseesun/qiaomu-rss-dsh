@@ -23,7 +23,6 @@ import { resolveReadingVersion } from './reading-version.js';
 import { SubscriptionManager } from './SubscriptionManager.jsx';
 import { Discover } from './Discover.jsx';
 import { VideoPlayer } from './VideoPlayer.jsx';
-import { MediaDock } from './MediaDock.jsx';
 import { quoteRange, selectedPassage } from './selection.js';
 import { AskArticle } from './AskArticle.jsx';
 import { articleAudioUrl, articleVideoEmbed } from '../video.js';
@@ -642,6 +641,8 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
   const openCompanion=(quote='')=>{if(!activeArticle)return;setFocused(false);setAskContext({key:activeArticle.article.key,title:activeArticle.article.titleZh||activeArticle.article.title,version:active,selection:quote,quoteId:quote?++selectionSerial.current:undefined});};
   const selectChannel=(key)=>{if(key===channel)return;articleRequest.current++;setAskContext(null);setFocused(false);setSelected(undefined);setPassage(null);setFilter('all');setPlatform('all');setQuery('');setChannel(key);};
   const captureSelection=()=>{const found=selectedPassage(proseRef.current);if(found?.quote===passage?.quote)return;setPassage(found);if(found)openCompanion(found.quote);};
+  const homeOpen=useRef();homeOpen.current=action=>{if(action?.key)void openArticle(action.key);else if(action?.kind==='subscriptions'){setSettingsEntry({tab:'sources',addPrompt:false});setDialog('settings');}};
+  useEffect(()=>api.homeActions?.attach(action=>homeOpen.current?.(action)),[api]);
   const theme = reading.readingTheme && reading.readingTheme !== 'auto' ? reading.readingTheme : null;
 
 
