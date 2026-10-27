@@ -25,6 +25,8 @@ define('getComputedStyle', dom.window.getComputedStyle);
 define('requestAnimationFrame', (cb) => setTimeout(cb, 0));
 define('cancelAnimationFrame', (id) => clearTimeout(id));
 
+dom.window.HTMLMediaElement.prototype.pause=function(){};
+dom.window.HTMLMediaElement.prototype.load=function(){};
 const req = dependencyRequire;
 const React = req('react');
 const ReactDOMClient = req('react-dom/client');
@@ -54,7 +56,7 @@ const fakeCtx = {
     get rss() { throw new Error('cannot get property "remote.rss" without inject'); },
   },
   inject(dependencies, callback) {
-    if (dependencies.includes('sessions')) return;
+    if (dependencies.includes('sessions') || dependencies.includes('qiaomuAudio')) return;
     if (!dependencies.includes('remote.rss')) throw new Error('missing rss namespace dependency');
     return callback({ ...this, remote: { rss: new Proxy({}, {
       get(_target, name) {
@@ -176,10 +178,10 @@ if (!container.querySelector('.qrs-article-head .qrs-mode-chip')) throw new Erro
 const mode = container.querySelector('.qrs-mode-select');
 if (!mode || mode.options.length !== 3) throw new Error('reading-version select missing');
 for (const selector of ['.qrs-reader-toolbar', '.qrs-reader-nav', '.qrs-actions']) if (!container.querySelector(selector)) throw new Error(`missing ${selector}`);
-if (container.querySelectorAll('.qrs-actions .qrs-icon').length !== 4) throw new Error('reader action icons missing');
+if (container.querySelectorAll('.qrs-actions .qrs-icon').length !== 6) throw new Error('reader action icons missing');
 if (!apiCalls.includes('setRead')) throw new Error('opening an unread article did not mark it read');
-if (container.querySelector('.qrs-article .qrs-article-audio audio')?.getAttribute('src') !== 'https://example.org/episode.mp3') throw new Error('podcast player did not open with article');
-console.log('READER OK — head chip, h1, prose, version select, nav, four reader actions');
+if (container.querySelector('.qrs-audio-dock audio')?.getAttribute('src') !== 'https://example.org/episode.mp3') throw new Error('podcast player did not open with article');
+console.log('READER OK — head chip, h1, prose, version select, nav, original outline/speech and reader actions');
 
 // ---- version switching ----------------------------------------------------
 mode.value = 'rewrite';
@@ -371,7 +373,7 @@ container.querySelector('.qrs-discover .qrs-discover-close')?.click();
 container.querySelectorAll('.qrs-entry')[1].click();
 for (let i = 0; i < 4; i += 1) await tick();
 if (container.querySelector('.qrs-video-frame')?.getAttribute('src') !== 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ') throw new Error('YouTube article link did not render video player');
-if (container.querySelector('audio')) throw new Error('previous article audio must be removed when switching articles');
+if (container.querySelector('audio[src]') || !container.querySelector('.qrs-audio-dock.is-hidden')) throw new Error('previous podcast must stop and hide when switching articles');
 if (!container.querySelector('.qrs-article .qrs-video-frame')) throw new Error('video player must be inside article details');
 
 console.log('CLIENT RENDER TESTS PASSED');

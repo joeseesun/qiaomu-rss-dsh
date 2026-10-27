@@ -1,3 +1,4 @@
+import {createRssSpeechHost} from './speech.js';
 /**
  * The `rss` Host service: subscriptions, feed fetching, Qiaomu integration,
  * AI-assisted Chinese versions, persistence, and the Remote face the web
@@ -30,6 +31,7 @@ export class RssService extends TypertRemoteService {
     this.config = config;
     this.store = new RssStore(ctx.logger);
     this.guard = createGenerationGuard();
+    this.speechHost=createRssSpeechHost(this.store);
     this.videoPlayer = new VideoPlayerServer();
     this.collection = new CollectionManager(this.store, () => this.origin, {
       schedule: (fn, delay) => typeof ctx.timeout === 'function' ? ctx.timeout(fn, delay) : (() => { const timer = setTimeout(fn, delay); timer.unref?.(); return () => clearTimeout(timer); })(),
@@ -751,6 +753,8 @@ export class RssService extends TypertRemoteService {
     return { ok: true };
   }
 
+  async speechOperation(request){await this.ready;return this.speechHost(request);}
+
   async getSettings() {
     await this.ready;
     return { settings: { ...READING_DEFAULTS, ...this.store.data.settings } };
@@ -776,7 +780,7 @@ export class RssService extends TypertRemoteService {
     'removeSubscription', 'updateSubscription', 'opmlPreview', 'opmlImport', 'opmlExport',
     'searchPodcastShows', 'listPodcastEpisodes', 'importPodcastTranscript',
     'getCollectionSettings', 'configureCollection', 'submitCollection', 'listCollectionJobs', 'collectionSnapshot', 'acknowledgeCollection', 'openCollectionResult',
-    'setRead', 'setFavorite', 'getSettings', 'saveSettings', 'prepareChat', 'setReadingContext',
+    'speechOperation', 'setRead', 'setFavorite', 'getSettings', 'saveSettings', 'prepareChat', 'setReadingContext',
   ];
   const prototype = RssService.prototype;
   for (const name of names) {

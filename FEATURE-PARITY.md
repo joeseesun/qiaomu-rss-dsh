@@ -1,3 +1,5 @@
+> 2026-10-28: Current full-adaptation status and evidence: [Original adaptation](docs/ORIGINAL-ADAPTATION.md). The text below is historical.
+
 > 2026-09-30 当前 Harness 版说明：下文较早的 Obsidian 功能表和测试记录保留为迁移历史，不代表现在的功能清单。当前版已经移除所有笔记、划线保存、日记和工作区 Markdown 写入的入口及 Remote/Agent 方法。AI 伴读使用右侧 Harness 原生对话、自动默认工作区和可拖动分割线；文章与选区以会话上下文提供。既有 `data.json` 历史字段保留以免丢失用户数据。当前功能以 README 和实际安装包为准。
 
 # 完整版功能对照与验收

@@ -17,6 +17,7 @@ check(p.exports);
 check(p.dsh.bundle.patch);
 check(p.icon || (p.name === 'qiaomu-rss-dsh' ? './lib/client.js' : './icon.svg'));
 assert(files.has('README.md') && files.has('LICENSE'));
+for(const file of ['THIRD_PARTY_NOTICES.md','licenses/DEPENDENCIES.md','licenses/QiaomuReadingFangsong-OFL.txt'])assert(files.has(file),`Missing notice: ${file}`);
 const screenshots = JSON.parse(readFileSync('screenshots.json','utf8'));
 assert(Array.isArray(screenshots) && screenshots.length >= 1 && screenshots.length <= 8);
 for (const file of screenshots) assert(!file.includes('..') && !file.startsWith('/') && existsSync(file), `Invalid screenshot: ${file}`);

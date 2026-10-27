@@ -1,0 +1,7 @@
+/* Only Harness tokens, mounting geometry and native companion boundaries. Original product styles are unchanged. */
+.qrs-root,.qrs-dsh-outline {--text-normal:var(--qrs-fg);--text-muted:var(--qrs-muted);--text-faint:var(--qrs-faint);--background-primary:var(--qrs-bg);--background-secondary:var(--qrs-subtle);--background-modifier-border:var(--qrs-border);--font-interface:var(--dsw-alias-font-family,sans-serif);--font-monospace:ui-monospace,monospace;--qrs-list-font:var(--font-interface);--qrs-bg-2:var(--qrs-subtle)}
+.qrs-root[data-qrs-theme=auto]{--qrs-fg:var(--dsw-alias-label-primary,#171717);--qrs-muted:var(--dsw-alias-label-secondary,#666);--qrs-faint:var(--dsw-alias-label-tertiary,#8f8f8f);--qrs-bg:var(--dsw-alias-bg-base,#fff);--qrs-subtle:var(--dsw-alias-bg-layer-1,#fafafa);--qrs-hover:var(--dsw-alias-bg-layer-2,#f2f2f2);--qrs-border:var(--dsw-alias-border-l2,#ebebeb);--qrs-border-strong:var(--dsw-alias-border-l3,#d4d4d4)}
+.qrs-dsh-outline{flex:0 0 260px;min-width:0;min-height:0;border-left:1px solid var(--qrs-border);background:var(--qrs-bg);color:var(--qrs-fg)}
+.qrs-dsh-media{flex-shrink:0}.qrs-dsh-media .qrs-audio-dock{position:relative;bottom:auto;left:auto;right:auto}
+.qrs-reader-head{flex-shrink:0}.qrs-reader-head .qrs-reader-toolbar{position:relative}
+@container(max-width:760px){.qrs-dsh-outline{position:absolute;inset:0 0 0 auto;width:min(300px,85%);z-index:20;box-shadow:-1px 0 12px #0001}}

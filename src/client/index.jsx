@@ -1,3 +1,4 @@
+import {createRssSpeechClient} from './speech.js';
 /**
  * qiaomu-rss client half: mounts the `rss` Remote namespace and registers the
  * reading panel (sidebar icon + `main` page). Built into a single
@@ -55,6 +56,7 @@ const TYPERT_REMOTE = {
     method('opmlExport', false),
     method('setRead'),
     method('setFavorite'),
+    method('speechOperation'),
     method('getSettings', false),
     method('saveSettings'),
     ...['prepareChat','setReadingContext'].map(name => method(name)),
@@ -125,10 +127,15 @@ function registerReader(ctx) {
       opmlExport: () => call('opmlExport'),
       setRead: (keys, read) => call('setRead', { keys, read }),
       setFavorite: (key, favorite) => call('setFavorite', { key, favorite }),
+      speechOperation:request=>call('speechOperation',request),
       getSettings: () => call('getSettings'),
       saveSettings: (patch) => call('saveSettings', { patch }),
     }, SHARED_READS),
   };
+
+  api.speech=createRssSpeechClient(api);
+  ctx.inject(['qiaomuAudio'],ready=>api.speech.connect(ready.qiaomuAudio));
+  ctx.effect(()=>()=>api.speech.dispose());
 
   ctx.slots.inject('main', () => ctx.slots.register({
     name: 'main',

@@ -1,4 +1,4 @@
-import { WandSparkles } from 'lucide-react';
+import { WandSparkles, ListTree } from 'lucide-react';
 
 /**
  * Minimal lucide-style icon set for the reader, mirroring the icon names the
@@ -49,6 +49,7 @@ const PATHS = {
 const ALIASES = { 'gamepad-2': 'gamepad', 'notebook-pen-2': 'notebook-pen', 'panel-left': 'panel-left-close' };
 
 export function Icon({ name, size = 17, className, strokeWidth = 1.7, ...rest }) {
+  if(name==='list-tree')return <ListTree size={size} className={className} strokeWidth={strokeWidth} aria-hidden="true" {...rest}/>;
   if (name === 'wand-sparkles') return <WandSparkles size={size} className={className} strokeWidth={strokeWidth} aria-hidden="true" focusable="false" {...rest} />;
   const paths = PATHS[ALIASES[name] ?? name] ?? PATHS.circle;
   return (

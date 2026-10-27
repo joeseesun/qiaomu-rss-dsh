@@ -1,3 +1,7 @@
+import ORIGINAL_CSS from '../original/styles.css';
+import ORIGINAL_BOUNDARY from './original-boundary.css';
+import ORIGINAL_HOST from './harness-ui.css';
+import {OriginalAudioDock,OriginalOutline,OriginalSpeech,useOriginalFonts} from './OriginalMedia.jsx';
 /**
  * 乔木 RSS reader panel. Layout, class names, and visual parameters mirror the
  * original Obsidian plugin (src/view.ts + styles.css): a compact channel
@@ -243,7 +247,7 @@ function ensureStyles() {
   stylesReady = true;
   const style = document.createElement('style');
   style.dataset.plugin = 'qiaomu-rss-dsh';
-  style.textContent = PANEL_CSS + REFINEMENTS;
+  style.textContent = PANEL_CSS + REFINEMENTS + ORIGINAL_CSS + ORIGINAL_HOST + ORIGINAL_BOUNDARY;
   document.head.appendChild(style);
 }
 
@@ -304,6 +308,9 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
   const [passage,setPassage]=useState(null);
   const selectionSerial=useRef(0);
   const proseRef=useRef();
+  const scrollerRef=useRef();
+  const [outlineOpen,setOutlineOpen]=useState(false);
+  useOriginalFonts(reading.readingFont,message=>notify(message,true));
   const rootRef=useRef();
   const workareaRef=useRef();
   const companionDrag=useRef(false);
@@ -636,17 +643,17 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
   const selectChannel=(key)=>{if(key===channel)return;articleRequest.current++;setAskContext(null);setFocused(false);setSelected(undefined);setPassage(null);setFilter('all');setPlatform('all');setQuery('');setChannel(key);};
   const captureSelection=()=>{const found=selectedPassage(proseRef.current);if(found?.quote===passage?.quote)return;setPassage(found);if(found)openCompanion(found.quote);};
   const theme = reading.readingTheme && reading.readingTheme !== 'auto' ? reading.readingTheme : null;
-  const THEME_COLORS = { light: ['#ffffff', '#202124'], paper: ['#f5efdf', '#40382e'], sage: ['#e8eee3', '#29382c'], mist: ['#e7edf2', '#293741'], dark: ['#252525', '#dedede'], black: ['#090909', '#cccccc'] };
+
 
   return (
-    <div ref={rootRef} className={`qrs-root${focused ? ' qrs-focus' : ''}`} tabIndex={0} data-images={String(reading.showImages !== false)} data-reading-theme={theme ?? 'auto'}
+    <div ref={rootRef} className={`view-content qrs-root${focused ? ' qrs-focus' : ''}`} tabIndex={0} data-images={String(reading.showImages !== false)} data-reading-theme={theme ?? 'auto'} data-qrs-theme={theme ?? 'auto'}
       style={{
         '--qrs-list-width': `${listWidth}px`,
         '--qrs-font-size': `${reading.fontSize}px`,
         '--qrs-line-height': reading.lineHeight,
         '--qrs-article-width': `${reading.fontSize * reading.textWidth + 120}px`,
         '--qrs-font-family': fontStack(reading),
-        ...(theme ? { '--qrs-bg': THEME_COLORS[theme][0], '--qrs-bg-2': THEME_COLORS[theme][0], '--qrs-fg': THEME_COLORS[theme][1], '--qrs-chat-bg':THEME_COLORS[theme][0], '--qrs-chat-fg':THEME_COLORS[theme][1] } : {}),
+        '--qrs-chat-bg':'var(--qrs-bg)', '--qrs-chat-fg':'var(--qrs-fg)',
       }}>
       <div ref={workareaRef} style={{'--qrs-companion-width':`${companionWidth}%`}} className={`qrs-workarea${askContext ? ' has-companion' : ''}`}><div className="qrs-layout">
         <aside className="qrs-sidebar">
@@ -661,13 +668,15 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
             {channel !== 'collection' && <button type="button" className={`qrs-icon${refreshing ? ' is-loading' : ''}`} title="刷新" aria-label="刷新" onClick={() => void refresh(channel)}><Icon name="refresh-cw" /></button>}
           </div>
           {channel !== 'collection' && <div className="qrs-filters" role="group">
-            {[['all', '全部'], ['unread', '未读'], ['favorites', '收藏']].map(([value, label]) => (
-              <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</button>
-            ))}
-            {currentChannel?.kind === 'community' && [['all', '全部'], ...PLATFORMS].map(([value, label]) => (
+            <div className="qrs-filter-row">
+              {[['all', '全部'], ['unread', '未读'], ['favorites', '收藏']].map(([value, label]) => (
+                <button key={value} type="button" data-filter={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</button>
+              ))}
+              <button type="button" className="qrs-icon qrs-settings-button" title="插件设置" aria-label="插件设置" onClick={() => setDialog('settings')}><Icon name="settings" size={17} /></button>
+            </div>
+            {currentChannel?.kind === 'community' && <div className="qrs-filter-row">{[['all', '全部'], ...PLATFORMS].map(([value, label]) => (
               <button key={value} type="button" data-platform={value} aria-pressed={platform === value} onClick={() => setPlatform(value)}>{label}</button>
-            ))}
-            <button type="button" className="qrs-settings-button" title="插件设置" aria-label="插件设置" onClick={() => setDialog('settings')}><Icon name="settings" size={17} /></button>
+            ))}</div>}
           </div>}
           <div className={`qrs-search-box${searchOpen && channel !== 'collection' ? '' : ' is-hidden'}`}>
             <input ref={searchInput} type="search" aria-label="搜索文章" placeholder="搜索已加载的文章…" value={query}
@@ -716,7 +725,7 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
         </aside>
         <div className="qrs-resize" role="separator" aria-orientation="vertical" onPointerDown={startDrag}
           onDoubleClick={() => { setListWidth(300); localStorage.setItem('qrs.listWidth', '300'); }} />
-        <section className="qrs-reader" tabIndex={0}>
+        <section className="qrs-reader" ref={scrollerRef} tabIndex={0}>
           {selected?.loading ? (
             <div className="qrs-article-loading" role="status" aria-label="正在加载文章">
               <div className="qrs-reader-toolbar qrs-skeleton-toolbar" aria-hidden="true"><span className="qrs-skeleton qrs-skeleton-icon" /><span className="qrs-skeleton qrs-skeleton-pill" /><span className="qrs-skeleton qrs-skeleton-icon" /><span className="qrs-skeleton qrs-skeleton-icon" /></div>
@@ -745,7 +754,7 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
             </div>
           ) : (
             <>
-              <div className="qrs-reader-toolbar">
+              <div className="qrs-reader-head"><div className="qrs-reader-toolbar">
                 <button type="button" className="qrs-icon" title={askContext ? '选择频道' : focused ? '显示列表' : '专注阅读'} aria-label={askContext ? '选择频道' : focused ? '显示列表' : '专注阅读'}
                   onClick={(event) => askContext ? openPicker(event) : setFocused((current) => !current)}><Icon name={askContext ? 'panel-left-open' : focused ? 'panel-left-open' : 'panel-left-close'} /></button>
                 <label className="qrs-visually-hidden" htmlFor="qrs-mode">阅读版本</label>
@@ -759,16 +768,16 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
                   <button type="button" className="qrs-icon" title="上一篇" aria-label="上一篇" onClick={() => navigate(-1)}><Icon name="chevron-up" /></button>
                   <button type="button" className="qrs-icon" title="下一篇" aria-label="下一篇" onClick={() => navigate(1)}><Icon name="chevron-down" /></button>
                 </div>
-                <div className="qrs-actions">
+                <div className="qrs-actions"><button type="button" className="qrs-icon" aria-label="文章目录" data-qrs-outline="" aria-pressed={outlineOpen} onClick={()=>setOutlineOpen(value=>!value)}><Icon name="list-tree"/></button><OriginalSpeech api={api} rootRef={rootRef} proseRef={proseRef} article={activeArticle.article} mode={active}/>
                   <button type="button" className={`qrs-icon${activeArticle.article.favorite ? ' is-active' : ''}`}
-                    title={activeArticle.article.favorite ? '取消收藏' : '收藏'} aria-label="收藏" aria-pressed={Boolean(activeArticle.article.favorite)}
+                    data-qrs-tip="favorite" title={activeArticle.article.favorite ? '取消收藏' : '收藏'} aria-label="收藏" aria-pressed={Boolean(activeArticle.article.favorite)}
                     onClick={() => void toggleFavorite(activeArticle.article.key, activeArticle.article.favorite)}><Icon name="bookmark" /></button>
-                  <button type="button" className="qrs-icon" title={activeArticle.article.read ? '标记未读' : '标记已读'} aria-label="标记已读状态"
+                  <button type="button" className="qrs-icon" data-qrs-tip="read" title={activeArticle.article.read ? '标记未读' : '标记已读'} aria-label="标记已读状态"
                     aria-pressed={Boolean(activeArticle.article.read)} onClick={() => void setRead(activeArticle.article.key, !activeArticle.article.read)}>
                     <Icon name={activeArticle.article.read ? 'circle-check' : 'circle'} />
                   </button>
-                  <button type="button" className="qrs-icon" title="AI 伴读" aria-label="AI 伴读" onClick={()=>openCompanion(passage?.quote??'')}><Icon name="wand-sparkles"/></button>
-                  <button type="button" className="qrs-icon" title="更多操作" aria-label="更多操作" aria-expanded={menuOpen}
+                  <button type="button" className="qrs-icon" data-qrs-tip="companion" title="AI 伴读" aria-label="AI 伴读" onClick={()=>openCompanion(passage?.quote??'')}><Icon name="wand-sparkles"/></button>
+                  <button type="button" className="qrs-icon" data-qrs-article-more="" title="更多操作" aria-label="更多操作" aria-expanded={menuOpen}
                     onClick={() => setMenuOpen((open) => !open)}><Icon name="ellipsis" /></button>
                   {menuOpen && (
                     <div className="qrs-menu" role="menu">
@@ -786,6 +795,7 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
                   {appearanceOpen && <ReadingAppearance settings={reading} onChange={applyReading} onClose={() => setAppearanceOpen(false)} />}
                 </div>
               </div>
+              </div>
               <article className="qrs-article" onContextMenu={linkContext}>
                 <div className="qrs-article-head">
                   {activeArticle.article.channelName && <span>{activeArticle.article.channelName}</span>}
@@ -799,7 +809,7 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
                     : (activeArticle.article.titleZh ?? activeArticle.article.title)}
                 </h1>
                 {activeArticle.article.titleZh && activeArticle.article.titleZh !== activeArticle.article.title && activeArticle.article.key.startsWith('collection:') && <p className="qrs-original-title">{collectionCopy().original}：{activeArticle.article.title}</p>}
-                {audioUrl && <MediaDock key={activeArticle.article.key} episode={{ ...activeArticle.article, audio: audioUrl }} />}
+
                 {videoEmbed && <VideoPlayer key={videoEmbed} embed={videoEmbed} playerUrl={activeArticle.videoPlayerUrl} />}
                 {bodyHtml
                   ? <div ref={proseRef} className="qrs-prose" onMouseUp={captureSelection} onKeyUp={captureSelection} dangerouslySetInnerHTML={{ __html: sanitizeHtml(bodyHtml, { baseUrl: activeArticle.article.url, maxLength: activeArticle.article.key.startsWith('podscribe:') ? 2_000_000 : undefined }) }} />
@@ -822,6 +832,7 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
           )}
         </section>
       </div>
+      {outlineOpen&&<OriginalOutline article={activeArticle?.article} mode={active} proseRef={proseRef} scrollerRef={scrollerRef} onClose={()=>setOutlineOpen(false)}/>}
       {askContext && <div className="qrs-companion-divider" role="separator" aria-label="调整文章与伴读宽度" aria-orientation="vertical" aria-valuemin={25} aria-valuemax={75} aria-valuenow={companionWidth} tabIndex={0}
         onPointerDown={event=>{event.preventDefault();companionDrag.current=true;event.currentTarget.setPointerCapture(event.pointerId);event.currentTarget.dataset.dragging='true';}}
         onPointerMove={event=>{if(!companionDrag.current)return;const area=workareaRef.current;const rect=area?.getBoundingClientRect();if(!rect)return;const vertical=getComputedStyle(area).flexDirection==='column';const total=vertical?rect.height:rect.width;const span=vertical?rect.bottom-event.clientY:rect.right-event.clientX;const minimum=Math.min(320,total*.3);const amount=Math.max(minimum,Math.min(span,total-minimum));companionWidthRef.current=Math.round(amount/total*100);setCompanionWidth(companionWidthRef.current);}}
@@ -831,6 +842,7 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
         onDoubleClick={()=>{companionWidthRef.current=44;setCompanionWidth(44);localStorage.setItem('qrs.companionWidth','44');}} />}
       {askContext && <AskArticle api={api} context={askContext} onClearSelection={() => { setPassage(null); window.getSelection()?.removeAllRanges(); setAskContext(previous => previous ? { ...previous, selection:'', quoteId:undefined } : previous); }} SessionProvider={SessionProvider} renderSlot={renderSlot} onClose={() => setAskContext(null)} onManagePrompts={() => { setSettingsEntry({ tab:'prompts', addPrompt:true }); setDialog('settings'); }} />}
       </div>
+      <OriginalAudioDock article={activeArticle?.article} audio={audioUrl} onOpen={key=>void openArticle(key)}/>
       {pickerOpen && !dialog && (
         <ChannelPicker channels={channels} current={channel} anchor={pickerAnchor} onClose={() => setPickerOpen(false)}
           onSelect={selectChannel} onManage={() => { setPickerOpen(false); setDialog('settings'); }} />
