@@ -1,11 +1,11 @@
 {
   "name": "qiaomu-rss-dsh",
   "description": "Qiaomu RSS reader for dsh: featured + personal feeds, AI translation/rewrite assist, agent tools, and a web reading panel",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "private": true,
   "license": "GPL-3.0-only",
   "engines": {
-    "dsh": ">=0.2.0-rc.2 <0.3.0"
+    "dsh": "0.2.1-rc.2 || 0.2.1-rc.3"
   },
   "repository": {
     "type": "git",
@@ -64,11 +64,11 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.0.5",
-    "@deepseek-ai/dsh-agent-default-model": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-home-paths": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-llm": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-typert-protocol": "0.2.1-rc.2"
+    "@deepseek-ai/dsh-agent-default-model": "0.2.1-rc.2 || 0.2.1-rc.3",
+    "@deepseek-ai/dsh-home-paths": "0.2.1-rc.2 || 0.2.1-rc.3",
+    "@deepseek-ai/dsh-llm": "0.2.1-rc.2 || 0.2.1-rc.3",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.2 || 0.2.1-rc.3",
+    "@deepseek-ai/dsh-typert-protocol": "0.2.1-rc.2 || 0.2.1-rc.3"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
