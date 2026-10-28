@@ -348,7 +348,8 @@ export class RssService extends TypertRemoteService {
           return await this.store.getArticle(key);
         }
       } catch (error) {
-        if (cached) return cached;
+        // List metadata is not a readable body. Surface the network failure so
+        // the reader can retry instead of treating an empty article as loaded.
         throw error;
       }
       return cached;

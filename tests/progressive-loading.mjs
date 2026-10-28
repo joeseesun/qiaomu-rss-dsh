@@ -40,3 +40,9 @@ assert.equal(mergeReadingVersion(state, 'qiaomu:other', 'rewrite', rewrite), sta
 const generated = { ...state, versions: { rewrite: { available: true, markdown: 'New generated version' } } };
 assert.equal(mergeReadingVersion(generated, article.key, 'rewrite', rewrite), generated, 'late reads cannot replace newly generated text');
 console.log('progressive reading: cached body, independent versions, preference, manual choice, stale response and generation race');
+
+const cold = Object.create(RssService.prototype);
+cold.store = { data: { settings: {} }, getArticle: async () => ({key:'qiaomu:cold',title:'Only list metadata'}) };
+globalThis.fetch = async () => Response.json({error:'missing'}, {status:404});
+await assert.rejects(cold.ensureArticle('qiaomu:cold'), /HTTP 404/, 'metadata cannot turn a failed body read into an empty success');
+console.log('cold article: network failures remain visible and retryable');
