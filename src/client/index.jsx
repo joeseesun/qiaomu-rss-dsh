@@ -39,6 +39,7 @@ const TYPERT_REMOTE = {
     method('listEntries'),
     method('searchArticles'),
     method('getArticle'),
+    method('getArticleVersions'),
     method('searchPodcastShows'),
     method('listPodcastEpisodes'),
     method('importPodcastTranscript'),
@@ -82,7 +83,7 @@ export async function apply(ctx) {
 
 const SHARED_READS = new Set([
   'getCollectionSettings', 'listCollectionJobs', 'collectionSnapshot',
-  'listChannels', 'listEntries', 'getArticle', 'searchPodcastShows',
+  'listChannels', 'listEntries', 'getArticle', 'getArticleVersions', 'searchPodcastShows',
   'listPodcastEpisodes', 'listSubscriptions', 'getSettings',
 ]);
 
@@ -110,7 +111,8 @@ function registerReader(ctx) {
       setReadingContext: (params) => call('setReadingContext', params),
       listChannels: () => call('listChannels'),
       listEntries: (params) => call('listEntries', params),
-      getArticle: (key) => call('getArticle', { key }),
+      getArticle: (key) => call('getArticle', { key, cachedVersions: true }),
+      getArticleVersions: (key, kind) => call('getArticleVersions', { key, kind }),
       searchPodcastShows: (query) => call('searchPodcastShows', { query }),
       listPodcastEpisodes: (show, page) => call('listPodcastEpisodes', { show, page }),
       importPodcastTranscript: (show, episode) => call('importPodcastTranscript', { show, episode }),

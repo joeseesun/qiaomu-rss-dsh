@@ -5,23 +5,15 @@
  */
 
 import { excerptOf } from './feeds.js';
+import { readJson } from './read-request.js';
 
-const TIMEOUT_MS = 20_000;
 /** Source catalogs rarely change; repeat refreshes reuse a 60-second copy. */
 const CATALOG_TTL_MS = 60_000;
 const catalogCache = new Map();
 
 async function getJson(origin, path) {
   const url = `${origin.replace(/\/+$/, '')}${path}`;
-  const response = await fetch(url, {
-    method: 'GET',
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-    headers: { accept: 'application/json' },
-  });
-  if (!response.ok) {
-    throw new Error(`qiaomu api ${path} failed: HTTP ${response.status}`);
-  }
-  return response.json();
+  return readJson(url);
 }
 
 /**
