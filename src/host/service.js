@@ -260,7 +260,7 @@ export class RssService extends TypertRemoteService {
     await this.ready;
     const article = await this.ensureArticle(key);
     if (!article) throw new Error(`qiaomu-rss: unknown article ${key}`);
-    const versions = await this.loadVersions(article);
+    const versions = await this.loadVersions(article, request?.cachedVersions ? 'cached' : 'all');
     this.store.putArticle(article);
     return {
       article: this.entrySummary(article),
@@ -269,6 +269,14 @@ export class RssService extends TypertRemoteService {
       truncated: article.truncated === true,
       versions,
     };
+  }
+
+  async getArticleVersions(request) {
+    if (!['translation', 'rewrite'].includes(request?.kind)) throw new Error('无效阅读版本');
+    await this.ready;
+    const article = await this.ensureArticle(request.key);
+    if (!article) throw new Error('文章不存在');
+    return (await this.loadVersions(article, request.kind))[request.kind];
   }
 
   async getCollectionSettings() { await this.ready; return this.collection.settings(); }
@@ -340,7 +348,8 @@ export class RssService extends TypertRemoteService {
           return await this.store.getArticle(key);
         }
       } catch (error) {
-        if (cached) return cached;
+        // List metadata is not a readable body. Surface the network failure so
+        // the reader can retry instead of treating an empty article as loaded.
         throw error;
       }
       return cached;
@@ -364,7 +373,7 @@ export class RssService extends TypertRemoteService {
     return cached;
   }
 
-  async loadVersions(article) {
+  async loadVersions(article, kind = 'all') {
     const versions = {
       original: { available: true, title: article.title, html: article.html },
       translation: { available: false, status: 'missing' },
@@ -377,10 +386,11 @@ export class RssService extends TypertRemoteService {
     if (local?.rewrite) {
       versions.rewrite = { available: true, status: 'ok', source: local.rewrite.source, title: local.rewrite.title, markdown: local.rewrite.markdown };
     }
-    if (article.key.startsWith('qiaomu:') || article.collectionEntryId) {
+    if (kind !== 'cached' && (article.key.startsWith('qiaomu:') || article.collectionEntryId)) {
       const id = article.collectionEntryId || article.key.slice('qiaomu:'.length);
       const origin = article.collectionOrigin || this.origin;
-      if (!versions.translation.available) {
+      const tasks = [];
+      if (!versions.translation.available && (kind === 'all' || kind === 'translation')) tasks.push((async () => {
         try {
           const published = await qiaomu.fetchTranslation(origin, id);
           if (published.status === 'ok') {
@@ -396,8 +406,8 @@ export class RssService extends TypertRemoteService {
         } catch (error) {
           versions.translation = { available: false, status: `error: ${error.message}` };
         }
-      }
-      if (!versions.rewrite.available) {
+      })());
+      if (!versions.rewrite.available && (kind === 'all' || kind === 'rewrite')) tasks.push((async () => {
         try {
           const published = await qiaomu.fetchRewrite(origin, id);
           if (published.status === 'ok') {
@@ -413,7 +423,8 @@ export class RssService extends TypertRemoteService {
         } catch (error) {
           versions.rewrite = { available: false, status: `error: ${error.message}` };
         }
-      }
+      })());
+      await Promise.all(tasks);
     }
     return versions;
   }
@@ -771,7 +782,7 @@ export class RssService extends TypertRemoteService {
 // Mark every public method above as Remote-exported.
 {
   const names = [
-    'listChannels', 'listEntries', 'searchArticles', 'getArticle', 'getVersionContent',
+    'listChannels', 'listEntries', 'searchArticles', 'getArticle', 'getArticleVersions', 'getVersionContent',
     'generateVersion', 'refresh', 'listSubscriptions', 'addSubscription',
     'removeSubscription', 'updateSubscription', 'opmlPreview', 'opmlImport', 'opmlExport',
     'searchPodcastShows', 'listPodcastEpisodes', 'importPodcastTranscript',

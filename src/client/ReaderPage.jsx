@@ -15,7 +15,7 @@ import { ChannelPicker, ChannelMark } from './ChannelPicker.jsx';
 import { ReadingAppearance } from './ReadingAppearance.jsx';
 import { AddFeedDialog } from './dialogs.jsx';
 import { SettingsPage } from './SettingsPage.jsx';
-import { resolveReadingVersion } from './reading-version.js';
+import { resolveReadingVersion, mergeReadingVersion } from './reading-version.js';
 import { SubscriptionManager } from './SubscriptionManager.jsx';
 import { Discover } from './Discover.jsx';
 import { VideoPlayer } from './VideoPlayer.jsx';
@@ -502,7 +502,17 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
     const data = await run(api.getArticle(key), { errorPrefix: '读取正文失败' });
     if (request !== articleRequest.current) return;
     if (!data) { setSelected({ error: true, key }); return; }
-    setSelected({ ...data, article:{...data.article,read:true}, active: resolveReadingVersion(restoreVersion || reading.defaultVersion, data) });document.querySelector('.qrs-reader')?.scrollTo?.({top:0});
+    const requestedVersion = restoreVersion || reading.defaultVersion;
+    setSelected({ ...data, article:{...data.article,read:true}, requestedVersion, active: resolveReadingVersion(requestedVersion, data) });document.querySelector('.qrs-reader')?.scrollTo?.({top:0});
+    // The original (or a locally saved version) is already readable. Each
+    // published version arrives independently, without delaying the other.
+    for (const kind of ['rewrite', 'translation']) {
+      if (data.versions?.[kind]?.available) continue;
+      void api.getArticleVersions(key, kind).then(version => {
+        if (request !== articleRequest.current) return;
+        setSelected(current => mergeReadingVersion(current, key, kind, version));
+      }).catch(() => {}); // A failed optional version must not replace readable content.
+    }
     if (data.article?.read === false) {
       void api.setRead([key], true).catch(e=>notify(e.message,true));
       setPage((previous) => ({ ...previous, entries: previous.entries.map((entry) => (entry.key === key ? { ...entry, read: true } : entry)) }));
@@ -547,7 +557,7 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
     setSelected((current) => {
       if (current?.article?.key !== key) return current;
       return { ...current, generating: undefined, ...(version ? {
-        active: kind, versions: { ...current.versions, [kind]: { ...version, available: true } },
+        active: kind, requestedVersion: kind, versions: { ...current.versions, [kind]: { ...version, available: true } },
       } : {}) };
     });
     if (version) notify(version.source === 'qiaomu' ? '已载入乔木发布版本' : '已载入 Harness 生成版本');
@@ -749,7 +759,7 @@ export function ReaderPage({ api, SessionProvider, renderSlot }) {
                 <button type="button" className="qrs-icon" title={askContext ? '选择频道' : focused ? '显示列表' : '专注阅读'} aria-label={askContext ? '选择频道' : focused ? '显示列表' : '专注阅读'}
                   onClick={(event) => askContext ? openPicker(event) : setFocused((current) => !current)}><Icon name={askContext ? 'panel-left-open' : focused ? 'panel-left-open' : 'panel-left-close'} /></button>
                 <label className="qrs-visually-hidden" htmlFor="qrs-mode">阅读版本</label>
-                <div className="qrs-version-switch"><span aria-hidden="true">版本</span><select id="qrs-mode" className="qrs-mode-select" value={active} onChange={(event) => {setPassage(null);setSelected((current) => ({ ...current, active: event.target.value }));}}>
+                <div className="qrs-version-switch"><span aria-hidden="true">版本</span><select id="qrs-mode" className="qrs-mode-select" value={active} onChange={(event) => {const value = event.target.value;setPassage(null);setSelected((current) => ({ ...current, active: value, requestedVersion: value }));}}>
                   {['original', 'translation', 'rewrite'].map((kind) => {
                     const available = kind === 'original' || versions?.[kind]?.available;
                     return <option key={kind} value={kind}>{VERSION_LABELS[kind]}{available ? '' : '（缺失）'}</option>;
