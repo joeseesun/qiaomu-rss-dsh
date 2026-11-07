@@ -7,6 +7,7 @@ import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol';
 import { RssStore } from './store.js';
 import { READING_DEFAULTS, validateSettings } from '../reading-settings.js';
 import { buildOpml, hashKey, parseFeed, parseOpml } from './feeds.js';
+import { listFreshRssSubscriptions } from './freshrss.js';
 import { htmlToText, sanitizeHtml } from './sanitize.js';
 import { chooseReadingContextVersion } from './reading-context-version.js';
 import { readingMaterial, readingScopeInstruction } from '../reading-scope.js';
@@ -744,6 +745,21 @@ export class RssService extends TypertRemoteService {
     return { xml: buildOpml(this.store.data.subscriptions) };
   }
 
+  /**
+   * Pull the subscription list from a self-hosted FreshRSS (Google Reader
+   * compatible) account and present it in the same preview shape as OPML, so
+   * the client can reuse the select-then-import flow unchanged. Credentials
+   * are used for this call only and never stored.
+   */
+  async freshrssPreview(request) {
+    await this.ready;
+    const subs = await listFreshRssSubscriptions(request ?? {});
+    const xml = buildOpml(subs.map((sub) => ({ url: sub.url, name: sub.name, group: sub.group })));
+    if (!xml) throw new Error('FreshRSS 返回的订阅列表为空');
+    const entries = parseOpml(xml).map((entry) => ({ ...entry, duplicate: Boolean(this.store.findSubscriptionByUrl(entry.url)) }));
+    return { xml, entries, source: 'freshrss' };
+  }
+
   // ------------------------------------------------------------------
   // Read state / favorites / settings
   // ------------------------------------------------------------------
@@ -785,6 +801,7 @@ export class RssService extends TypertRemoteService {
     'listChannels', 'listEntries', 'searchArticles', 'getArticle', 'getArticleVersions', 'getVersionContent',
     'generateVersion', 'refresh', 'listSubscriptions', 'addSubscription',
     'removeSubscription', 'updateSubscription', 'opmlPreview', 'opmlImport', 'opmlExport',
+    'freshrssPreview',
     'searchPodcastShows', 'listPodcastEpisodes', 'importPodcastTranscript',
     'getCollectionSettings', 'configureCollection', 'submitCollection', 'listCollectionJobs', 'collectionSnapshot', 'acknowledgeCollection', 'openCollectionResult',
     'setRead', 'setFavorite', 'getSettings', 'saveSettings', 'prepareChat', 'setReadingContext',
