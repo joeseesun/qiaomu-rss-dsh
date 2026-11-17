@@ -49,6 +49,9 @@ async function complete(ctx, systemPrompt, userText, signal) {
     else if (chunk.type === 'finish') {
       finished = true;
       if (chunk.reason?.kind === 'error') {
+        if (chunk.reason.failure?.code === 'CONTENT_REFUSED') {
+          throw new Error('DeepSeek 拒绝处理这篇文章的伴读请求。');
+        }
         throw new Error(`qiaomu-rss: model call failed: ${chunk.reason.failure?.message ?? 'unknown error'}`);
       }
       if (chunk.reason?.kind === 'aborted') throw new Error('qiaomu-rss: generation aborted');
