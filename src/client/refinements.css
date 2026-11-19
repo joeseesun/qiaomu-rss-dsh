@@ -246,6 +246,7 @@
 .qrs-opml-import input, .qrs-opml-import textarea { width: 100%; min-width: 0; padding: 8px 10px; border: 1px solid var(--qrs-border); border-radius: 7px; background: var(--qrs-bg); color: var(--qrs-fg); font: inherit; font-size: 12px; }
 .qrs-opml-import input[type=file] { border-style: dashed; }
 .qrs-opml-import .qmrss-btn { width: max-content; }
+.qrs-freshrss-hint { margin: 0; color: var(--qrs-muted, inherit); opacity: .75; font-size: 11px; line-height: 1.5; }
 .qrs-opml-results { max-height: 200px; overflow: auto; }
 .qrs-opml-results label { display: block; padding: 5px; font-size: 12px; }
 .qrs-settings-about-brand { display: flex; gap: 14px; align-items: center; }

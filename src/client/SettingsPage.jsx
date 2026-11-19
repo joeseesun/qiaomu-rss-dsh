@@ -6,6 +6,7 @@ import packageInfo from '../../package.json';
 import { Icon } from './icons.jsx';
 import { ReadingControls } from './ReadingAppearance.jsx';
 import { OpmlImport } from './OpmlImport.jsx';
+import { FreshRssImport } from './FreshRssImport.jsx';
 import { SubscriptionManager } from './SubscriptionManager.jsx';
 import { PromptManager } from './PromptManager.jsx';
 
@@ -20,6 +21,7 @@ export function SettingsPage({ api, onClose, notify, initialTab = 'reading', sta
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showFreshRss, setShowFreshRss] = useState(false);
   useEffect(() => {
     let cancelled = false;
     void Promise.all([api.getSettings(), api.listSubscriptions()]).then(([preferences, feeds]) => {
@@ -88,9 +90,11 @@ export function SettingsPage({ api, onClose, notify, initialTab = 'reading', sta
             </div>
             <div className="qrs-settings-card qrs-settings-sources-card">
               <div className="qrs-settings-card-head qrs-settings-source-head"><div><h3>我的订阅</h3><p>{subscriptions.length} 个订阅源</p></div><div className="qrs-settings-source-actions">
+                <button type="button" onClick={() => setShowFreshRss(current => !current)} aria-expanded={showFreshRss}><Rss size={15} />从 FreshRSS 导入</button>
                 <button type="button" onClick={() => setShowImport(current => !current)} aria-expanded={showImport}><Upload size={15} />导入 OPML</button>
                 <button type="button" onClick={() => void exportOpml()}><Download size={15} />导出</button>
               </div></div>
+              {showFreshRss && <div className="qrs-settings-import"><FreshRssImport api={api} onDone={async () => { await reloadSubscriptions(); setShowFreshRss(false); }} /></div>}
               {showImport && <div className="qrs-settings-import"><OpmlImport api={api} onDone={async () => { await reloadSubscriptions(); setShowImport(false); }} /></div>}
               <SubscriptionManager api={api} subscriptions={subscriptions} onChange={setSubscriptions} notify={(text, isError) => { setMessage(text); if (isError) notify(text, true); }} />
             </div>
